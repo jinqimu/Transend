@@ -32,6 +32,8 @@ if git -C "$ROOT" rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
     exit 1
 fi
 
+# 发版时统一推送：先推本地提交（main），再推 tag 触发 CI
+git -C "$ROOT" push origin HEAD:main
 git -C "$ROOT" tag -a "$TAG" -m "Transend $VERSION"
 git -C "$ROOT" push origin "$TAG"
 
