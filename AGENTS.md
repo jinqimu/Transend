@@ -13,6 +13,11 @@
   - 产物文件名由打包脚本按 Info.plist 自动生成，无需手动改
 - 新版本有实质改动时才追加变更条目；版本刚开未完成时写「（开发中）」
 
+## 交付规则
+
+- **每次完成代码改动后，必须运行 `./Scripts/build-app.sh` 重新构建打包 `dist/Transend.app`**，供用户直接运行试用；不要只跑 `swift build` 验证后就结束（`swift build` 只产出 `.build`，不会更新 `dist`）
+- 需要分发产物（dmg/zip）时再额外 `./Scripts/make-dmg.sh` / `./Scripts/distribute.sh`
+
 ## 常用命令
 
 - 构建：`./Scripts/build-app.sh`（产物 `dist/Transend.app`）
