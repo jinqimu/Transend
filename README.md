@@ -4,6 +4,12 @@ macOS 菜单栏翻译应用：内置标准 [llama.cpp](https://github.com/ggml-o
 
 ## 版本变更
 
+**0.1.0**（2026-09-15）
+- Homebrew 发布：新增 cask（`brew install --cask jinqimu/transend/transend`），支持 `brew upgrade --cask transend` 更新
+- 应用自更新：启动时自动检查 GitHub Release 正式版，发现新版在菜单栏弹窗与设置面板提示；普通安装（dmg/zip）可一键「下载并安装」（自动替换并重启），Homebrew 安装引导执行 brew 升级——两者使用同一产物、版本一致
+- 设置面板新增「应用更新」分区（当前版本/检查/安装进度）与「启动时自动检查」开关；帮助新增「应用怎么更新？」
+- 工程：新增 GitHub Actions 自动发布（推送 v* tag → 构建 dmg/zip + checksums）、`Scripts/release.sh`、`Scripts/update-cask.sh`
+
 **0.0.3**（2026-09-03）
 - 引擎可更新：启动时自动检查 llama.cpp 官方正式版（v 开头稳定版，不采用 b 开头 pre-release），发现新版菜单栏弹窗提示，设置面板一键「安装更新」——带下载/解压进度、可取消、失败自动回滚、镜像加速，装完自动重启引擎，全程不修改 App 包内文件
 - 修复「模型目录」按钮误放在引擎分区：已归位到「模型」分区
