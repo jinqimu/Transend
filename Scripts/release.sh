@@ -35,5 +35,5 @@ fi
 git -C "$ROOT" tag -a "$TAG" -m "Transend $VERSION"
 git -C "$ROOT" push origin "$TAG"
 
-echo "已推送 $TAG，GitHub Actions 将自动构建并发布 Release。"
-echo "完成后执行 ./Scripts/update-cask.sh $VERSION 同步 Homebrew cask。"
+echo "已推送 ${TAG}，GitHub Actions 将自动构建并发布 Release。"
+echo "完成后执行 ./Scripts/update-cask.sh ${VERSION} 同步 Homebrew cask。"

@@ -258,8 +258,9 @@ final class AppUpdater: ObservableObject {
         p.standardOutput = FileHandle.nullDevice
         p.standardError = FileHandle.nullDevice
         p.terminationHandler = { [weak self] p in
+            guard let self else { return }
             Task { @MainActor in
-                guard let self, self.downloadProc === p else { return }
+                guard self.downloadProc === p else { return }
                 self.downloadProc = nil
                 let size = self.fileSize(of: dest)
                 if p.terminationStatus == 0, size > 0,
@@ -275,8 +276,9 @@ final class AppUpdater: ObservableObject {
 
         downloadTimer?.invalidate()
         downloadTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            guard let self else { return }
             Task { @MainActor in
-                guard let self, self.isDownloading else { return }
+                guard self.isDownloading else { return }
                 self.phase = .downloading(received: self.fileSize(of: dest), total: self.latestSize)
             }
         }
@@ -296,8 +298,9 @@ final class AppUpdater: ObservableObject {
         p.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
         p.arguments = ["-x", "-k", zip.path, unpack.path]
         p.terminationHandler = { [weak self] p in
+            guard let self else { return }
             Task { @MainActor in
-                guard let self, self.isBusy else { return }
+                guard self.isBusy else { return }
                 if p.terminationStatus == 0 {
                     let newApp = unpack.appendingPathComponent("Transend.app", isDirectory: true)
                     if FileManager.default.fileExists(atPath: newApp.path) {

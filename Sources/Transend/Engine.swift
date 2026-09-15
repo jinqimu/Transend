@@ -141,8 +141,9 @@ final class Engine: ObservableObject {
         }
 
         p.terminationHandler = { [weak self] p in
+            guard let self else { return }
             Task { @MainActor in
-                self?.onExit(p)
+                self.onExit(p)
             }
         }
 

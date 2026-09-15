@@ -79,8 +79,9 @@ final class Downloader: ObservableObject {
             url.absoluteString,
         ]
         p.terminationHandler = { [weak self] p in
+            guard let self else { return }
             Task { @MainActor in
-                guard let self, self.proc === p else { return }
+                guard self.proc === p else { return }
                 self.proc = nil
                 let size = self.fileSize(of: dest)
                 if p.terminationStatus == 0 || size >= self.sizeBytes {
@@ -95,8 +96,9 @@ final class Downloader: ObservableObject {
 
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            guard let self else { return }
             Task { @MainActor in
-                self?.downloadedBytes = self?.fileSize(of: dest) ?? 0
+                self.downloadedBytes = self.fileSize(of: dest)
             }
         }
     }
