@@ -69,7 +69,7 @@ brew tap jinqimu/transend
 brew install --cask transend
 ```
 
-> 当前未做 Apple 公证。若首次打开提示“无法验证开发者”，加 `--no-quarantine`，或执行
+> 当前未做 Apple 公证。若首次打开提示“无法验证开发者”，执行
 > `xattr -dr com.apple.quarantine /Applications/Transend.app`，或右键 App →「打开」。
 
 也可以直接下载 Release 里的 dmg/zip（见下「分发给朋友」），与 Homebrew 版是同一产物、同一版本号。
