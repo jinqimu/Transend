@@ -5,7 +5,7 @@ macOS 菜单栏翻译应用：内置标准 [llama.cpp](https://github.com/ggml-o
 ## 版本变更
 
 **0.1.0**（2026-09-15）
-- Homebrew 发布：新增 cask（`brew install --cask jinqimu/transend/transend`），支持 `brew upgrade --cask transend` 更新
+- Homebrew 发布：新增 cask（`brew install --cask jinqimu/tap/transend`），支持 `brew upgrade --cask transend` 更新
 - 应用自更新：启动时自动检查 GitHub Release 正式版，发现新版在菜单栏弹窗与设置面板提示；普通安装（dmg/zip）可一键「下载并安装」（自动替换并重启），Homebrew 安装引导执行 brew 升级——两者使用同一产物、版本一致
 - 设置面板新增「应用更新」分区（当前版本/检查/安装进度）与「启动时自动检查」开关；帮助新增「应用怎么更新？」
 - 工程：新增 GitHub Actions 自动发布（推送 v* tag → 构建 dmg/zip + checksums）、`Scripts/release.sh`、`Scripts/update-cask.sh`
@@ -59,13 +59,13 @@ macOS 菜单栏翻译应用：内置标准 [llama.cpp](https://github.com/ggml-o
 ## 安装（Homebrew）
 
 ```bash
-brew install --cask jinqimu/transend/transend
+brew install --cask jinqimu/tap/transend
 ```
 
 或：
 
 ```bash
-brew tap jinqimu/transend
+brew tap jinqimu/tap
 brew install --cask transend
 ```
 

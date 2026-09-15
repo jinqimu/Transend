@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 同步 Homebrew cask：从 GitHub Release 取 dmg 的 sha256，更新 tap 仓库里的 Casks/transend.rb。
 # 用法：./Scripts/update-cask.sh <version> [tap-dir]
-#   tap-dir 默认：$TAP_DIR 或 ../homebrew-transend（与主仓库同级）
+#   tap-dir 默认：$TAP_DIR 或 ../homebrew-tap（与主仓库同级）
 #
 # 依赖：已发布的 GitHub Release（含 checksums.txt）。CI 完成后运行。
 set -euo pipefail
@@ -9,7 +9,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPO="jinqimu/Transend"
 VERSION="${1:-}"
-TAP_DIR="${2:-${TAP_DIR:-$ROOT/../homebrew-transend}}"
+TAP_DIR="${2:-${TAP_DIR:-$ROOT/../homebrew-tap}}"
 CASK="$TAP_DIR/Casks/transend.rb"
 
 if [ -z "$VERSION" ]; then
