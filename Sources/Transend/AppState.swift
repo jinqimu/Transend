@@ -1,0 +1,279 @@
+import Foundation
+import Combine
+import AppKit
+import ServiceManagement
+import Carbon.HIToolbox
+
+/// 全局状态：模型选择、下载源、下载、引擎、翻译。
+@MainActor
+final class AppState: ObservableObject {
+
+    static let shared = AppState()
+
+    let engine = Engine()
+    let downloader = Downloader()
+    let updater = EngineUpdater()
+    let hotKey = GlobalHotKey()
+    let clipboardMonitor = ClipboardMonitor()
+
+    /// 全局快捷键（可自定义，录制式设置）。keyCode <= 0 表示禁用。
+    @Published var hotKeyKeyCode: Int = 17 { // kVK_ANSI_T
+        didSet {
+            UserDefaults.standard.set(hotKeyKeyCode, forKey: "hotKeyKeyCode")
+            reRegisterHotKey()
+        }
+    }
+    @Published var hotKeyModifiers: UInt32 = UInt32(cmdKey | optionKey) { // ⌥⌘
+        didSet {
+            UserDefaults.standard.set(Int(hotKeyModifiers), forKey: "hotKeyModifiers")
+            reRegisterHotKey()
+        }
+    }
+    /// 再次进入翻译弹窗时自动清空输入框（菜单栏弹窗内有开关，设置面板同步）
+    @Published var autoClearInput: Bool = false {
+        didSet { UserDefaults.standard.set(autoClearInput, forKey: "autoClearInput") }
+    }
+
+    /// 快捷键的可读显示（如 ⌥⌘T / 已禁用）
+    var hotKeyDisplay: String {
+        hotKeyKeyCode > 0
+            ? shortcutDisplayString(keyCode: hotKeyKeyCode, modifiers: hotKeyModifiers)
+            : "已禁用"
+    }
+
+    // MARK: - 模型与下载源（UserDefaults 持久化）
+
+    @Published var selectedModelID: String {
+        didSet { UserDefaults.standard.set(selectedModelID, forKey: "selectedModelID") }
+    }
+    @Published var source: DownloadSource {
+        didSet { UserDefaults.standard.set(source.rawValue, forKey: "downloadSource") }
+    }
+
+    var profiles: [ModelProfile] { ModelProfile.available }
+    var selectedProfile: ModelProfile {
+        profiles.first { $0.id == selectedModelID } ?? profiles[0]
+    }
+    var modelDownloaded: Bool {
+        selectedProfile.isDownloaded(at: AppPaths.modelURL(for: selectedProfile))
+    }
+
+    // MARK: - 翻译
+
+    @Published var input = ""
+    @Published var output = ""
+    @Published var target: Language = ModelProfile.hyMT2.languages[1] // 默认 English
+    @Published var userPickedTarget = false
+    @Published var isTranslating = false
+    @Published var message: String?
+
+    @Published var launchAtLogin: Bool {
+        didSet {
+            UserDefaults.standard.set(launchAtLogin, forKey: "launchAtLogin")
+            applyLaunchAtLogin()
+        }
+    }
+
+    private var started = false
+
+    private init() {
+        let ud = UserDefaults.standard
+        selectedModelID = ud.string(forKey: "selectedModelID") ?? ModelProfile.available[0].id
+        source = DownloadSource(rawValue: ud.string(forKey: "downloadSource") ?? "") ?? .huggingface
+        launchAtLogin = ud.object(forKey: "launchAtLogin") as? Bool ?? false
+        hotKeyKeyCode = ud.object(forKey: "hotKeyKeyCode") as? Int ?? 17
+        hotKeyModifiers = UInt32(ud.object(forKey: "hotKeyModifiers") as? Int ?? Int(cmdKey | optionKey))
+        autoClearInput = ud.object(forKey: "autoClearInput") as? Bool ?? false
+    }
+
+    // MARK: - 启动
+
+    func launch() {
+        guard !started else { return }
+        started = true
+        // 模型未下载：不自动下载，界面顶部橙色引导条指引用户去设置选择下载源
+        if modelDownloaded {
+            engine.start(profile: selectedProfile)
+        }
+        // 引擎更新：清理残留更新文件 + 后台检查 llama.cpp 是否有新版本
+        // （12 小时内不重复自动检查；发现新版在菜单栏弹窗与设置面板提示，用户可一键安装）
+        updater.cleanupStaleFiles()
+        updater.autoCheck()
+        // 快捷翻译：全局热键（默认 ⌥⌘T，可在设置中自定义）
+        clipboardMonitor.start()
+        hotKey.onPress = { [weak self] in
+            Task { @MainActor in self?.performQuickAction() }
+        }
+        if hotKeyKeyCode > 0 {
+            hotKey.register(keyCode: UInt32(hotKeyKeyCode), modifiers: hotKeyModifiers)
+        }
+    }
+
+    /// 快捷键变更后重新注册（设置界面实时生效）
+    private func reRegisterHotKey() {
+        guard started else { return }
+        hotKey.unregister()
+        if hotKeyKeyCode > 0 {
+            hotKey.register(keyCode: UInt32(hotKeyKeyCode), modifiers: hotKeyModifiers)
+        }
+    }
+
+    /// 全局热键动作：嗅探到刚复制的文本 → 填入并弹出菜单栏弹窗（自动翻译）；
+    /// 否则直接弹出菜单栏弹窗（与点击菜单栏一致，聚焦输入框）。
+    func performQuickAction() {
+        if let text = clipboardMonitor.takeFreshText() {
+            input = text
+            output = ""
+            message = nil
+            MenuBarController.shared.showPopover(keepInput: true)
+        } else {
+            MenuBarController.shared.showPopover()
+        }
+    }
+
+    func shutdown() {
+        engine.stop()
+        downloader.cancel()
+        updater.cancelInstall()
+        hotKey.unregister()
+        clipboardMonitor.stop()
+    }
+
+    // MARK: - 模型切换与下载
+
+    /// 切换模型：停止旧引擎 →（未下载则不启动，橙色引导条指引下载）→ 启动新引擎。
+    func switchModel(to id: String) {
+        guard id != selectedModelID else { return }
+        selectedModelID = id
+        engine.stop()
+        downloader.cancel()
+        // 未下载：不自动下载、不启动，界面顶部橙色引导条指引
+        if modelDownloaded {
+            engine.start(profile: selectedProfile)
+        }
+    }
+
+    func downloadSelectedModel() {
+        guard !downloader.isDownloading else { return }
+        let profile = selectedProfile
+        let url = source.url(repoPath: profile.repoPath, fileName: profile.fileName)
+        downloader.start(urls: [url], sizeBytes: profile.sizeBytes, dest: AppPaths.modelURL(for: profile)) { [weak self] in
+            guard let self else { return }
+            self.engine.start(profile: self.selectedProfile)
+        }
+    }
+
+    // MARK: - 翻译
+
+    func translate() {
+        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        guard engine.isRunning else {
+            message = "引擎未就绪（\(engine.state.label)）"
+            return
+        }
+        let lang = userPickedTarget ? target : (containsCJK(text) ? Language(code: "en", english: "English", chinese: "英语") : Language(code: "zh", english: "Chinese", chinese: "中文"))
+        isTranslating = true
+        output = ""
+        message = nil
+        Task { [weak self] in
+            guard let self else { return }
+            var acc = ""
+            do {
+                for try await chunk in Translator(engine: self.engine, profile: self.selectedProfile)
+                    .stream(text, target: lang) {
+                    acc += chunk
+                    self.output = acc
+                }
+                if acc.isEmpty { self.message = "引擎无输出，请查看日志" }
+            } catch {
+                self.message = error.localizedDescription
+            }
+            self.isTranslating = false
+        }
+    }
+
+    // MARK: - 菜单栏图标（圆圈 + 大写 T，颜色表示状态）
+
+    var menuIcon: NSImage {
+        let color: NSColor
+        if downloader.isDownloading {
+            color = .systemBlue
+        } else {
+            switch engine.state {
+            case .running: color = .systemGreen
+            case .starting: color = .systemOrange
+            case .failed: color = .systemRed
+            case .stopped: color = .systemGray
+            }
+        }
+        return MenuIcon.render(fill: color)
+    }
+
+    // MARK: - 菜单动作
+
+    func toggleEngine() {
+        if engine.isRunning {
+            engine.stop()
+        } else {
+            engine.start(profile: selectedProfile)
+        }
+    }
+
+    func revealModelInFinder() {
+        let url = AppPaths.modelURL(for: selectedProfile)
+        if !FileManager.default.fileExists(atPath: url.path) {
+            NSWorkspace.shared.activateFileViewerSelecting([AppPaths.modelsDir])
+        } else {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
+    }
+
+    func openLog() {
+        NSWorkspace.shared.open(AppPaths.engineLogURL)
+    }
+
+    private func applyLaunchAtLogin() {
+        do {
+            if launchAtLogin {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        } catch {
+            // 非 App 包内运行时忽略（如 swift run 调试）
+        }
+    }
+
+    private func containsCJK(_ s: String) -> Bool {
+        s.unicodeScalars.contains { scalar in
+            (0x4E00...0x9FFF).contains(scalar.value) || (0x3040...0x30FF).contains(scalar.value)
+        }
+    }
+}
+
+// MARK: - 快捷键显示格式化（Carbon 虚拟键码 → 可读字符串）
+
+func shortcutDisplayString(keyCode: Int, modifiers: UInt32) -> String {
+    var s = ""
+    if modifiers & UInt32(controlKey) != 0 { s += "⌃" }
+    if modifiers & UInt32(optionKey) != 0 { s += "⌥" }
+    if modifiers & UInt32(shiftKey) != 0 { s += "⇧" }
+    if modifiers & UInt32(cmdKey) != 0 { s += "⌘" }
+    return s + shortcutKeyName(keyCode)
+}
+
+func shortcutKeyName(_ code: Int) -> String {
+    keyNames[code] ?? "键\(code)"
+}
+
+private let keyNames: [Int: String] = [
+    0: "A", 1: "S", 2: "D", 3: "F", 4: "H", 5: "G", 6: "Z", 7: "X", 8: "C", 9: "V",
+    11: "B", 12: "Q", 13: "W", 14: "E", 15: "R", 16: "Y", 17: "T",
+    18: "1", 19: "2", 20: "3", 21: "4", 22: "6", 23: "5", 24: "=", 25: "9", 26: "7", 27: "-", 28: "8", 29: "0",
+    30: "]", 31: "O", 32: "U", 33: "[", 34: "I", 35: "P",
+    36: "回车", 37: "L", 38: "J", 39: "'", 40: "K", 41: ";", 42: "\\", 43: ",", 44: "/", 45: "N", 46: "M", 47: ".",
+    48: "Tab", 49: "空格", 50: "`", 51: "删除", 53: "Esc",
+    96: "F5", 97: "F6", 98: "F7", 99: "F3", 100: "F8", 101: "F9", 103: "F11", 109: "F10", 111: "F12", 118: "F4", 120: "F2", 122: "F1",
+    123: "←", 124: "→", 125: "↓", 126: "↑",
+]

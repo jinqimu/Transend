@@ -1,0 +1,12 @@
+.build/
+dist/
+.DS_Store
+
+# 编译产物
+*.o
+*.dSYM/
+*.log
+
+# SwiftPM
+.swiftpm/
+Package.resolved
