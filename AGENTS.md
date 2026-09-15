@@ -31,6 +31,7 @@
 ## 项目要点
 
 - 菜单栏应用（LSUIElement，无 Dock 图标）：手动 `NSStatusItem` + `NSPopover`（内容复用 PopoverView）——不用 SwiftUI MenuBarExtra，因为其 popover 无法程序化弹出（快捷热键也需要右上角弹出）；设置 / 帮助 / 版本记录为手动 NSWindow，关闭联动恢复 `.accessory` 激活策略
+- 入口为手动 AppKit 生命周期（`TransendMain.main()` → `NSApplication.run()`），**不使用 SwiftUI `App`/`Settings` 场景**：空的 `Settings { EmptyView() }` 占位场景会成为唯一场景，导致启动时弹出空的 “Transend Settings” 幻影窗口（macOS 的 open-untitled-window 路径）
 - 快捷翻译：全局热键（Carbon，默认 ⌥⌘T，设置面板可录制自定义）+ 剪贴板嗅探（1s 轮询 changeCount，1.5s 时间窗），复制过文本则自动填入翻译，否则聚焦输入框
 - 本地 API 端口 18632 专属；启动时清扫孤儿进程
 - 下载源：HuggingFace / HF Mirror / modelscope（国内推荐）

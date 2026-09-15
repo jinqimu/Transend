@@ -3,15 +3,18 @@ import AppKit
 import Combine
 
 @main
-struct TransendApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-
-    var body: some Scene {
-        // 占位 scene：菜单栏入口由 AppDelegate 手动创建 NSStatusItem + NSPopover。
-        // 不用 SwiftUI MenuBarExtra 的原因：其 popover 无法程序化弹出，
-        // 快捷翻译热键需要"和点击菜单栏一样"在右上角弹出，必须手动管理。
-        // Settings 场景不会自动创建窗口，仅作占位（LSUIElement 应用不使用系统设置面板）。
-        Settings { EmptyView() }
+enum TransendMain {
+    /// 手动驱动 AppKit 生命周期，不使用 SwiftUI App/Scene。
+    ///
+    /// 原因：SwiftUI 的 `Settings { EmptyView() }` 占位场景会在启动时自动弹出一个
+    /// 空的 “Transend Settings” 窗口；而菜单栏应用只需 AppDelegate 手动管理
+    /// NSStatusItem/NSPopover，这里直接 `NSApplication.run()` 从根上避免该窗口。
+    static func main() {
+        let app = NSApplication.shared
+        let delegate = AppDelegate() // 强引用存活至 run() 结束（app.delegate 为弱引用）
+        app.delegate = delegate
+        app.setActivationPolicy(.accessory)
+        app.run()
     }
 }
 
@@ -229,6 +232,18 @@ func restoreAccessoryIfNoWindows() {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+
+    // MARK: - 防止空的 “Transend Settings” 幻影窗口
+    //
+    // 历史原因：App 曾用 `Settings { EmptyView() }` 作为占位场景。当它成为唯一场景时，
+    // macOS 启动/重新激活会走 “open untitled window” 路径，把它渲染成一个空窗口。
+    // 现已改为纯 AppKit 生命周期（无 SwiftUI 场景）；以下两道保险进一步杜绝：
+    //   - 拒绝“打开无标题窗口”（启动/重开时）
+    //   - 关闭应用状态恢复（避免旧的占位窗口从 savedState 被恢复）
+    func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool { false }
+    func applicationShouldRestoreApplicationState(_ coder: NSCoder) -> Bool { false }
+    func applicationShouldSaveApplicationState(_ coder: NSCoder) -> Bool { false }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppPaths.migrateIfNeeded() // 旧版（HyMT2）数据目录迁移，避免模型重新下载
         AppState.shared.launch()
