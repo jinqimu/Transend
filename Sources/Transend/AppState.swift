@@ -38,6 +38,13 @@ final class AppState: ObservableObject {
     @Published var autoCheckAppUpdate: Bool = true {
         didSet { UserDefaults.standard.set(autoCheckAppUpdate, forKey: "autoCheckAppUpdate") }
     }
+    /// 选中即翻译：选中文本后按全局快捷键，直接读取选区翻译（需辅助功能权限）
+    @Published var selectToTranslate: Bool = false {
+        didSet {
+            UserDefaults.standard.set(selectToTranslate, forKey: "selectToTranslate")
+            if selectToTranslate { ensureSelectToTranslatePermission() }
+        }
+    }
 
     /// 快捷键的可读显示（如 ⌥⌘T / 已禁用）
     var hotKeyDisplay: String {
@@ -81,6 +88,20 @@ final class AppState: ObservableObject {
 
     private var started = false
 
+    /// 记录「辅助功能权限生效时」的可执行文件签名（mtime+大小），用于更新后重新提示授权。
+    /// 用二进制签名而非版本号：同版本覆盖更新（如修复重发）也会改变二进制、使权限失效。
+    private static let axBinaryKey = "selectToTranslateTrustedBinary"
+
+    /// 当前可执行文件签名（mtime + 大小）。
+    private var binarySignature: String {
+        guard let url = Bundle.main.executableURL,
+              let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]) else {
+            return "unknown"
+        }
+        let t = Int(values.contentModificationDate?.timeIntervalSince1970 ?? 0)
+        return "\(t)-\(values.fileSize ?? 0)"
+    }
+
     private init() {
         let ud = UserDefaults.standard
         selectedModelID = ud.string(forKey: "selectedModelID") ?? ModelProfile.available[0].id
@@ -90,6 +111,7 @@ final class AppState: ObservableObject {
         hotKeyModifiers = UInt32(ud.object(forKey: "hotKeyModifiers") as? Int ?? Int(cmdKey | optionKey))
         autoClearInput = ud.object(forKey: "autoClearInput") as? Bool ?? false
         autoCheckAppUpdate = ud.object(forKey: "autoCheckAppUpdate") as? Bool ?? true
+        selectToTranslate = ud.object(forKey: "selectToTranslate") as? Bool ?? false
     }
 
     // MARK: - 启动
@@ -118,6 +140,8 @@ final class AppState: ObservableObject {
         if hotKeyKeyCode > 0 {
             hotKey.register(keyCode: UInt32(hotKeyKeyCode), modifiers: hotKeyModifiers)
         }
+        // 选中即翻译：辅助功能权限与二进制绑定，App 更新后可能失效 → 版本变化时重新提示授权
+        checkSelectToTranslatePermissionOnLaunch()
     }
 
     /// 快捷键变更后重新注册（设置界面实时生效）
@@ -129,9 +153,18 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// 全局热键动作：嗅探到刚复制的文本 → 填入并弹出菜单栏弹窗（自动翻译）；
-    /// 否则直接弹出菜单栏弹窗（与点击菜单栏一致，聚焦输入框）。
+    /// 全局热键动作（优先级）：
+    /// 1. 选中即翻译：读取当前前台 App 中选中的文本（需辅助功能权限）
+    /// 2. 刚复制/剪切过文本（剪贴板嗅探）
+    /// 3. 都没有 → 弹出菜单栏弹窗并聚焦输入框（与点击菜单栏一致）
     func performQuickAction() {
+        if selectToTranslate, let selected = SelectionReader.selectedText() {
+            input = selected
+            output = ""
+            message = nil
+            MenuBarController.shared.showPopover(keepInput: true)
+            return
+        }
         if let text = clipboardMonitor.takeFreshText() {
             input = text
             output = ""
@@ -140,6 +173,58 @@ final class AppState: ObservableObject {
         } else {
             MenuBarController.shared.showPopover()
         }
+    }
+
+    // MARK: - 选中即翻译（辅助功能权限）
+
+    /// 开启开关时调用：已授权则记录签名，未授权则提示。
+    func ensureSelectToTranslatePermission() {
+        if SelectionReader.isTrusted {
+            UserDefaults.standard.set(binarySignature, forKey: Self.axBinaryKey)
+            return
+        }
+        promptAccessibility(afterUpdate: false)
+    }
+
+    /// 启动时检查：未授权、或二进制已变化（权限可能因更新而失效）→ 重新提示授权。
+    private func checkSelectToTranslatePermissionOnLaunch() {
+        guard selectToTranslate else { return }
+        let current = binarySignature
+        let stored = UserDefaults.standard.string(forKey: Self.axBinaryKey)
+        guard !SelectionReader.isTrusted || stored != current else { return }
+        UserDefaults.standard.set(current, forKey: Self.axBinaryKey)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.promptAccessibility(afterUpdate: stored != nil)
+        }
+    }
+
+    /// 设置面板「重新授权」入口。
+    func reauthorizeAccessibility() {
+        UserDefaults.standard.set(binarySignature, forKey: Self.axBinaryKey)
+        SelectionReader.promptForPermission()
+        SelectionReader.openSystemSettings()
+    }
+
+    /// 提示用户授予 / 重新授予辅助功能权限。
+    private func promptAccessibility(afterUpdate: Bool) {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = afterUpdate ? "Transend 已更新，请重新授权辅助功能" : "需要辅助功能权限"
+        alert.informativeText = (afterUpdate
+            ? "未签名应用的辅助功能权限与 App 二进制绑定，更新后权限会失效。请重新勾选 Transend 以恢复「选中即翻译」。\n\n"
+            : "") + "「选中即翻译」需要在按快捷键时读取你选中的文本。请在「系统设置 → 隐私与安全性 → 辅助功能」中勾选 Transend。"
+        alert.addButton(withTitle: "打开系统设置")
+        alert.addButton(withTitle: "稍后")
+
+        let previous = NSApp.activationPolicy()
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            SelectionReader.promptForPermission()
+            SelectionReader.openSystemSettings()
+        }
+        if previous == .accessory { NSApp.setActivationPolicy(.accessory) }
     }
 
     func shutdown() {

@@ -221,6 +221,7 @@ struct SettingsView: View {
 
     @State private var isRecordingShortcut = false
     @State private var recordingMonitor: Any?
+    @State private var axTrusted = SelectionReader.isTrusted
 
     var body: some View {
         Form {
@@ -313,9 +314,30 @@ struct SettingsView: View {
                     .controlSize(.small)
                 }
                 Toggle("再次进入时自动清空输入", isOn: $state.autoClearInput)
+                Toggle("选中即翻译", isOn: $state.selectToTranslate)
+                if state.selectToTranslate {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(axTrusted ? Color.green : Color.orange)
+                            .frame(width: 8, height: 8)
+                        Text(axTrusted ? "辅助功能权限：已授权" : "辅助功能权限：未授权")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        if !axTrusted {
+                            Button("去授权") { state.reauthorizeAccessibility() }
+                                .controlSize(.small)
+                        }
+                    }
+                }
                 Text("热键全局生效；录制时按 Esc 取消，按 ⌫ 清除快捷键")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if state.selectToTranslate {
+                    Text("选中文本 → 按快捷键即可翻译；首次需在系统设置勾选 Transend（App 更新后权限失效会再次提示）")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("通用") {
@@ -326,7 +348,7 @@ struct SettingsView: View {
                     HStack {
                         Text("版本")
                         Spacer()
-                        Text("0.1.0")
+                        Text("0.1.1")
                             .foregroundStyle(.secondary)
                         Image(systemName: "chevron.right")
                             .font(.caption2)
@@ -381,6 +403,9 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 460)
         .frame(minHeight: 380)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            axTrusted = SelectionReader.isTrusted
+        }
     }
 
     // MARK: - 引擎更新
@@ -650,12 +675,14 @@ struct HelpView: View {
                         "引擎（llama.cpp）官方持续迭代，修复崩溃、提速或支持新模型。应用启动时会自动检查官方正式版（v 开头稳定版），有新版本时菜单栏弹窗会有橙色提示；在设置 → 引擎中可一键「安装更新」。更新只写入你的用户数据目录，不修改 App 本身，安装完成后自动重启引擎。")
                     faq("应用怎么更新？",
                         "应用会通过 GitHub Release 自动检查新版本（可在设置 →「应用更新」关闭）。普通安装（dmg/zip）可在设置里点「下载并安装」，自动替换并重启；Homebrew 安装请执行 brew update && brew upgrade --cask transend，两种方式使用同一产物、版本一致。")
+                    faq("「选中即翻译」怎么用？",
+                        "设置 → 快捷翻译中开启后：选中任意文本 → 按全局快捷键，即可直接翻译（无需先复制）。首次需在「系统设置 → 隐私与安全性 → 辅助功能」中勾选 Transend。因应用未做 Apple 公证，辅助功能权限与程序绑定，每次更新后可能失效——应用会在更新后再次提示重新授权。")
                     faq("离线能用吗？",
                         "模型下载完成后完全离线可用，翻译请求不会离开本机。")
                 }
 
                 section("技术信息") {
-                    LabeledContent("版本", value: "0.1.0")
+                    LabeledContent("版本", value: "0.1.1")
                     LabeledContent("引擎版本", value: AppState.shared.updater.currentVersionDisplay)
                     LabeledContent("本地 API", value: "http://127.0.0.1:18632（OpenAI 兼容）")
                     LabeledContent("模型目录", value: "~/Library/Application Support/Transend/models")
@@ -732,9 +759,16 @@ struct ChangelogView: View {
             VStack(alignment: .leading, spacing: 20) {
                 Text("版本记录")
                     .font(.title2.bold())
-                Text("当前版本 0.1.0（快速开发版，随时更新）")
+                Text("当前版本 0.1.1（快速开发版，随时更新）")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                versionBlock("0.1.1", "2026-09-15", [
+                    "「选中即翻译」（可选，默认关）：选中文本 → 按全局快捷键直接翻译（读取系统辅助功能选区，无需先复制）。首次需在系统设置授权辅助功能；未公证应用权限与二进制绑定，更新后会重新提示授权",
+                    "设置调整：「应用更新」分区移至「通用」与「帮助」之间；帮助分区新增「项目主页」（GitHub）链接",
+                    "修复：启动时弹出空的 “Transend Settings” 幻影窗口——入口改为纯 AppKit 生命周期，并拒绝无标题窗口与状态恢复",
+                    "工程：Homebrew tap 迁移到 jinqimu/homebrew-tap（tap 名 jinqimu/tap），安装命令 brew install --cask jinqimu/tap/transend",
+                ])
 
                 versionBlock("0.1.0", "2026-09-15", [
                     "Homebrew 发布：新增 cask（`brew install --cask jinqimu/transend/transend`），支持 `brew upgrade --cask transend` 更新",

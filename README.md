@@ -4,6 +4,12 @@ macOS 菜单栏翻译应用：内置标准 [llama.cpp](https://github.com/ggml-o
 
 ## 版本变更
 
+**0.1.1**（2026-09-15）
+- 「选中即翻译」（可选，默认关）：选中文本 → 按全局快捷键直接翻译（读取系统辅助功能选区，无需先复制）。首次需在系统设置授权辅助功能；未公证应用权限与二进制绑定，更新后会重新提示授权
+- 设置调整：「应用更新」分区移至「通用」与「帮助」之间；帮助分区新增「项目主页」（GitHub）链接
+- 修复：启动时弹出空的 “Transend Settings” 幻影窗口（入口改为纯 AppKit 生命周期，并拒绝无标题窗口与状态恢复）
+- 工程：Homebrew tap 迁移到 `jinqimu/homebrew-tap`（tap 名 `jinqimu/tap`），安装命令 `brew install --cask jinqimu/tap/transend`
+
 **0.1.0**（2026-09-15）
 - Homebrew 发布：新增 cask（`brew install --cask jinqimu/tap/transend`），支持 `brew upgrade --cask transend` 更新
 - 应用自更新：启动时自动检查 GitHub Release 正式版，发现新版在菜单栏弹窗与设置面板提示；普通安装（dmg/zip）可一键「下载并安装」（自动替换并重启），Homebrew 安装引导执行 brew 升级——两者使用同一产物、版本一致
@@ -43,7 +49,8 @@ macOS 菜单栏翻译应用：内置标准 [llama.cpp](https://github.com/ggml-o
 - **引擎可更新**：启动时自动检查 llama.cpp 官方**正式版**（v 开头稳定版，不采用 b 开头 pre-release），有新版本时菜单栏弹窗提示，设置中一键「安装更新」——下载官方 release 装到用户数据目录，不修改 App 本身，装完自动重启引擎
 - **模型可选**：内置 3 个量化档（IQ2_M 690MB / Q3_K_M 907MB / Q4_K_M 1.08GB），设置中随时切换
 - **下载源可选**：HuggingFace / HF Mirror / ModelScope 三选一（ModelScope 对国内网络通常最快），断点续传 + 进度显示
-- **极简**：7 个 Swift 文件，无自定义 HTTP 服务 —— 本地 API 就是 llama-server 自带的 OpenAI 兼容接口
+- **选中即翻译（可选）**：设置 →「快捷翻译」开启后，选中任意文本按全局快捷键即可直接翻译（读取系统辅助功能选区，无需先复制；未公证应用更新后需重新授权）
+- **极简**：十余个 Swift 文件，无自定义 HTTP 服务 —— 本地 API 就是 llama-server 自带的 OpenAI 兼容接口
 - **后台稳定**：引擎崩溃自动重启（指数退避）、启动时清扫残留引擎/端口占用、日志落盘、可选开机自启
 - **可换模型**：模型档案抽象（`ModelProfile.swift`），换模型只需新增一个 profile
 
@@ -159,6 +166,7 @@ Sources/Transend/
   Engine.swift           llama-server 子进程管理（自动重启、端口清扫）
   EngineUpdater.swift    引擎（llama.cpp）检查更新与安装
   AppUpdater.swift       应用（Transend.app）检查更新与安装（含 Homebrew 识别）
+  SelectionReader.swift  辅助功能读取前台 App 选区（选中即翻译）
   Downloader.swift       模型下载（断点续传、进度）
   GlobalHotKey.swift     全局热键（Carbon）
   Translate.swift        提示词构造 + SSE 流式翻译
