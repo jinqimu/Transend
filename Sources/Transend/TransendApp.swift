@@ -123,8 +123,8 @@ enum SettingsWindow {
             rootView: SettingsView().environmentObject(AppState.shared))
         let w = NSWindow(contentViewController: vc)
         w.title = "设置"
-        w.setContentSize(NSSize(width: 460, height: 560)) // 引擎区含更新检查/安装进度，加高防内容裁剪
-        w.styleMask = [.titled, .closable, .miniaturizable]
+        w.setContentSize(NSSize(width: 460, height: 660)) // 含引擎/应用两组更新检查与进度，加高防裁剪
+        w.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         w.isReleasedWhenClosed = false
         w.center()
         w.delegate = SettingsWindowDelegate.shared

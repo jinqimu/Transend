@@ -13,6 +13,7 @@ final class AppState: ObservableObject {
     let engine = Engine()
     let downloader = Downloader()
     let updater = EngineUpdater()
+    let appUpdater = AppUpdater()
     let hotKey = GlobalHotKey()
     let clipboardMonitor = ClipboardMonitor()
 
@@ -32,6 +33,10 @@ final class AppState: ObservableObject {
     /// 再次进入翻译弹窗时自动清空输入框（菜单栏弹窗内有开关，设置面板同步）
     @Published var autoClearInput: Bool = false {
         didSet { UserDefaults.standard.set(autoClearInput, forKey: "autoClearInput") }
+    }
+    /// 启动时自动检查应用（Transend.app）是否有新版本
+    @Published var autoCheckAppUpdate: Bool = true {
+        didSet { UserDefaults.standard.set(autoCheckAppUpdate, forKey: "autoCheckAppUpdate") }
     }
 
     /// 快捷键的可读显示（如 ⌥⌘T / 已禁用）
@@ -84,6 +89,7 @@ final class AppState: ObservableObject {
         hotKeyKeyCode = ud.object(forKey: "hotKeyKeyCode") as? Int ?? 17
         hotKeyModifiers = UInt32(ud.object(forKey: "hotKeyModifiers") as? Int ?? Int(cmdKey | optionKey))
         autoClearInput = ud.object(forKey: "autoClearInput") as? Bool ?? false
+        autoCheckAppUpdate = ud.object(forKey: "autoCheckAppUpdate") as? Bool ?? true
     }
 
     // MARK: - 启动
@@ -99,6 +105,11 @@ final class AppState: ObservableObject {
         // （12 小时内不重复自动检查；发现新版在菜单栏弹窗与设置面板提示，用户可一键安装）
         updater.cleanupStaleFiles()
         updater.autoCheck()
+        // 应用更新：清理残留更新工作目录 +（可选）后台检查 Transend 是否有新版本
+        appUpdater.cleanupStaleFiles()
+        if autoCheckAppUpdate {
+            appUpdater.autoCheck()
+        }
         // 快捷翻译：全局热键（默认 ⌥⌘T，可在设置中自定义）
         clipboardMonitor.start()
         hotKey.onPress = { [weak self] in
@@ -135,6 +146,7 @@ final class AppState: ObservableObject {
         engine.stop()
         downloader.cancel()
         updater.cancelInstall()
+        appUpdater.cancelInstall()
         hotKey.unregister()
         clipboardMonitor.stop()
     }

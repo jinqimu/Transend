@@ -32,6 +32,7 @@ struct PopoverView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             statusHeader
+            appUpdateBanner
             engineUpdateBanner
             if state.downloader.isDownloading {
                 downloadProgress
@@ -70,6 +71,30 @@ struct PopoverView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+        }
+    }
+
+    /// 应用有新版本时的引导条（点击打开设置更新）
+    @ViewBuilder
+    private var appUpdateBanner: some View {
+        if case .updateAvailable(let current, let latest) = state.appUpdater.checkState {
+            Button {
+                SettingsWindow.show()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .foregroundStyle(.orange)
+                    Text("Transend 有新版本 \(latest)（当前 \(current)），点此更新…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Spacer()
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.orange.opacity(0.12)))
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -270,6 +295,30 @@ struct SettingsView: View {
                 }
             }
 
+            Section("应用更新") {
+                LabeledContent("当前版本", value: state.appUpdater.currentVersionDisplay)
+                if state.appUpdater.isBrewInstall {
+                    HStack(spacing: 8) {
+                        Button("复制升级命令") { state.appUpdater.copyBrewCommand() }
+                            .controlSize(.small)
+                        Text(state.appUpdater.brewUpgradeCommand)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .textSelection(.enabled)
+                        Spacer()
+                    }
+                }
+                appUpdateRow
+                HStack {
+                    Button("检查更新") { state.appUpdater.checkForUpdates() }
+                        .disabled(state.appUpdater.isBusy)
+                    Spacer()
+                    Toggle("启动时自动检查", isOn: $state.autoCheckAppUpdate)
+                        .toggleStyle(.checkbox)
+                }
+            }
+
             Section("快捷翻译") {
                 HStack {
                     Text("快捷键")
@@ -410,6 +459,92 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - 应用更新
+
+    /// 应用更新行：检查状态 / 新版本提示 / 下载安装进度（与菜单栏弹窗提示同步）。
+    /// Homebrew 安装时安装动作走 brew，不自行替换 App 包。
+    @ViewBuilder
+    private var appUpdateRow: some View {
+        let updater = state.appUpdater
+        switch updater.checkState {
+        case .checking:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("正在检查 Transend 新版本…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        case .upToDate(let current):
+            VStack(alignment: .leading, spacing: 2) {
+                Text("✓ 已是最新版本（\(current)）")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+                if let err = updater.errorMessage {
+                    Text(err).font(.caption).foregroundStyle(.orange)
+                }
+            }
+        case .updateAvailable(let current, let latest):
+            VStack(alignment: .leading, spacing: 6) {
+                Text("发现新版本 \(latest)（当前 \(current)）")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                switch updater.phase {
+                case .downloading(let received, let total):
+                    HStack(spacing: 6) {
+                        if total > 0 {
+                            ProgressView(value: updater.downloadProgress)
+                                .controlSize(.small)
+                        } else {
+                            ProgressView().controlSize(.small)
+                        }
+                        Text("下载 \(received / 1_000_000)MB\(total > 0 ? "/\(total / 1_000_000)MB" : "")…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("取消") { updater.cancelInstall() }
+                            .controlSize(.small)
+                    }
+                case .extracting:
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("正在解压…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                case .installing:
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("正在安装，应用将自动重启…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                case .idle:
+                    HStack(spacing: 8) {
+                        Button(updater.isBrewInstall ? "通过 Homebrew 更新" : "下载并安装") {
+                            updater.installUpdate()
+                        }
+                        .controlSize(.small)
+                        .disabled(updater.isBusy)
+                        if let err = updater.errorMessage {
+                            Text(err)
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+            }
+        case .failed(let msg):
+            Text(msg)
+                .font(.caption)
+                .foregroundStyle(.orange)
+        case .idle:
+            Text("尚未检查；点「检查更新」查看 Transend 是否有新版本")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     // MARK: - 快捷键录制
 
     /// 开始录制：本地监听按键，Esc 取消、⌫ 清除、含修饰键的组合立即生效。
@@ -506,6 +641,8 @@ struct HelpView: View {
                         "把 Transend.app 拖入废纸篓即可。如要同时清空缓存与模型（约 0.7–1.1GB），删除 ~/Library/Application Support/Transend。")
                     faq("引擎为什么需要更新？",
                         "引擎（llama.cpp）官方持续迭代，修复崩溃、提速或支持新模型。应用启动时会自动检查官方正式版（v 开头稳定版），有新版本时菜单栏弹窗会有橙色提示；在设置 → 引擎中可一键「安装更新」。更新只写入你的用户数据目录，不修改 App 本身，安装完成后自动重启引擎。")
+                    faq("应用怎么更新？",
+                        "应用会通过 GitHub Release 自动检查新版本（可在设置 →「应用更新」关闭）。普通安装（dmg/zip）可在设置里点「下载并安装」，自动替换并重启；Homebrew 安装请执行 brew update && brew upgrade --cask transend，两种方式使用同一产物、版本一致。")
                     faq("离线能用吗？",
                         "模型下载完成后完全离线可用，翻译请求不会离开本机。")
                 }

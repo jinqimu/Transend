@@ -1,0 +1,43 @@
+name: Release
+
+# 推送 v* tag 时构建并发布：dmg（Homebrew 安装用）+ zip（应用内自更新用）+ 校验和。
+# 本地打 tag：./Scripts/release.sh <version>
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build app (llama.cpp + swift release)
+        run: ./Scripts/build-app.sh
+
+      - name: Package dmg & zip
+        run: |
+          ./Scripts/make-dmg.sh
+          ./Scripts/distribute.sh
+
+      - name: Checksums
+        run: |
+          cd dist
+          shasum -a 256 Transend-*.dmg Transend-*.zip > checksums.txt
+          cat checksums.txt
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            dist/Transend-*.dmg \
+            dist/Transend-*.zip \
+            dist/checksums.txt \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes

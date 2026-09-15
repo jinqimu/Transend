@@ -19,7 +19,14 @@
 - 打包 dmg：`./Scripts/make-dmg.sh`（hdiutil 需设备访问权限）
 - 打包 zip：`./Scripts/distribute.sh`
 - 直接运行二进制（环境变量钩子生效）：`dist/Transend.app/Contents/MacOS/Transend`
-- 调试钩子：`HYMT2_OPEN_SETTINGS / HYMT2_OPEN_HELP / HYMT2_OPEN_CHANGELOG = 1` 启动时自动打开对应窗口；`HYMT2_QUICK_TEXT=<文本>` 模拟"刚复制"触发快捷翻译；`HYMT2_UPDATE_ENGINE=1` 启动即检查引擎更新并自动安装（跳过 12h 节流，端到端验证用）
+- 调试钩子：`HYMT2_OPEN_SETTINGS / HYMT2_OPEN_HELP / HYMT2_OPEN_CHANGELOG = 1` 启动时自动打开对应窗口；`HYMT2_QUICK_TEXT=<文本>` 模拟"刚复制"触发快捷翻译；`HYMT2_UPDATE_ENGINE=1` 启动即检查引擎更新并自动安装（跳过 12h 节流，端到端验证用）；`HYMT2_UPDATE_APP=1` 同理用于应用自身更新（会替换并重启 App，端到端验证用）
+
+## 发布与 Homebrew
+
+- **发布流程**：改 `Resources/Info.plist` 版本 → 提交 → `./Scripts/release.sh <version>`（打 tag `v<version>` 并推送）→ GitHub Actions（`.github/workflows/release.yml`）在 macOS arm64 runner 构建并创建 Release（dmg + zip + checksums.txt）→ `./Scripts/update-cask.sh <version>` 同步 tap 的 cask
+- **GitHub**：主仓库 `jinqimu/Transend`；Homebrew tap `jinqimu/homebrew-transend`（cask 源码在 tap 仓库 `Casks/transend.rb`）
+- **签名**：目前 ad-hoc（`codesign -s -`），未公证；cask 附 caveats 提示用户 `--no-quarantine` / 右键打开。后续提官方 homebrew-cask 前需 Developer ID 签名 + 公证
+- **应用自更新**：`AppUpdater.swift` 读 GitHub Release 正式版并与 `CFBundleShortVersionString` 比较；Homebrew 安装（检测 `Caskroom/transend`）时引导 `brew upgrade --cask transend`，普通安装则下载 Release zip 后由辅助脚本替换 App 并重启。发布时务必保证 Release 含 `Transend-<version>.zip`
 
 ## 项目要点
 

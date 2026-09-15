@@ -50,6 +50,52 @@ macOS 菜单栏翻译应用：内置标准 [llama.cpp](https://github.com/ggml-o
 ./Scripts/make-dmg.sh         # 打包分发 dmg：dist/Transend-<版本>.dmg（拖拽安装）
 ```
 
+## 安装（Homebrew）
+
+```bash
+brew install --cask jinqimu/transend/transend
+```
+
+或：
+
+```bash
+brew tap jinqimu/transend
+brew install --cask transend
+```
+
+> 当前未做 Apple 公证。若首次打开提示“无法验证开发者”，加 `--no-quarantine`，或执行
+> `xattr -dr com.apple.quarantine /Applications/Transend.app`，或右键 App →「打开」。
+
+也可以直接下载 Release 里的 dmg/zip（见下「分发给朋友」），与 Homebrew 版是同一产物、同一版本号。
+
+## 更新
+
+三种方式，均使用同一个 GitHub Release 产物，版本一致、可混用：
+
+1. **Homebrew 安装**：设置 →「应用更新」点「通过 Homebrew 更新」，或手动
+
+   ```bash
+   brew update && brew upgrade --cask transend
+   ```
+
+2. **普通安装（dmg/zip）**：应用会自动检查新版本（可在设置 →「应用更新」关闭），
+   菜单栏弹窗与设置面板出现提示后点「下载并安装」——自动替换 App 并重启；也支持手动「检查更新」。
+
+3. **引擎更新**（与 App 更新相互独立）：应用另会检查 llama.cpp 引擎新版本，装入用户数据目录，
+   不修改 App 包内文件。
+
+## 发布新版本
+
+```bash
+# 1. 改版本号：Resources/Info.plist（及各界面版本展示），提交
+# 2. 打 tag 触发 GitHub Actions 构建并发布 Release（dmg + zip + checksums.txt）
+./Scripts/release.sh <version>
+# 3. CI 完成后同步 Homebrew cask（更新 tap 仓库的 version/sha256）
+./Scripts/update-cask.sh <version>
+```
+
+CI 配置见 `.github/workflows/release.yml`（推送 `v*` tag 触发，macOS arm64 runner 构建）。
+
 ## 使用
 
 菜单栏图标（圆圈内大写 T，颜色表示状态：绿=运行中、橙=启动中、蓝=下载中、红=出错、灰=停止）：
@@ -100,15 +146,22 @@ Translate the following text into {target_lang}. Note that you should only outpu
 
 ```
 Sources/Transend/
-  TransendApp.swift      @main + MenuBarExtra + 设置窗口（NSWindow）
+  TransendApp.swift      @main + 菜单栏 NSStatusItem/NSPopover + 设置/帮助/版本记录窗口
   AppState.swift         全局状态/模型切换/启动编排
+  AppPaths.swift         数据目录/引擎解析/旧目录迁移
   ModelProfile.swift     模型档案列表 + 下载源 + 语言表 + 提示词模板
   Engine.swift           llama-server 子进程管理（自动重启、端口清扫）
+  EngineUpdater.swift    引擎（llama.cpp）检查更新与安装
+  AppUpdater.swift       应用（Transend.app）检查更新与安装（含 Homebrew 识别）
   Downloader.swift       模型下载（断点续传、进度）
+  GlobalHotKey.swift     全局热键（Carbon）
   Translate.swift        提示词构造 + SSE 流式翻译
   Views.swift            菜单栏弹窗 + 设置界面 + 圆圈 T 图标
 Scripts/build-app.sh     打包脚本
 Scripts/make-icon.sh     图标生成
 Scripts/make-dmg.sh      dmg 打包
 Scripts/distribute.sh    分发 zip 打包
+Scripts/release.sh       打 tag 触发 CI 发布
+Scripts/update-cask.sh   同步 Homebrew tap 的 cask（version/sha256）
+.github/workflows/release.yml  推送 v* tag 自动构建发布
 ```
