@@ -295,30 +295,6 @@ struct SettingsView: View {
                 }
             }
 
-            Section("应用更新") {
-                LabeledContent("当前版本", value: state.appUpdater.currentVersionDisplay)
-                if state.appUpdater.isBrewInstall {
-                    HStack(spacing: 8) {
-                        Button("复制升级命令") { state.appUpdater.copyBrewCommand() }
-                            .controlSize(.small)
-                        Text(state.appUpdater.brewUpgradeCommand)
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .textSelection(.enabled)
-                        Spacer()
-                    }
-                }
-                appUpdateRow
-                HStack {
-                    Button("检查更新") { state.appUpdater.checkForUpdates() }
-                        .disabled(state.appUpdater.isBusy)
-                    Spacer()
-                    Toggle("启动时自动检查", isOn: $state.autoCheckAppUpdate)
-                        .toggleStyle(.checkbox)
-                }
-            }
-
             Section("快捷翻译") {
                 HStack {
                     Text("快捷键")
@@ -360,6 +336,30 @@ struct SettingsView: View {
                 .buttonStyle(.plain)
             }
 
+            Section("应用更新") {
+                LabeledContent("当前版本", value: state.appUpdater.currentVersionDisplay)
+                if state.appUpdater.isBrewInstall {
+                    HStack(spacing: 8) {
+                        Button("复制升级命令") { state.appUpdater.copyBrewCommand() }
+                            .controlSize(.small)
+                        Text(state.appUpdater.brewUpgradeCommand)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .textSelection(.enabled)
+                        Spacer()
+                    }
+                }
+                appUpdateRow
+                HStack {
+                    Button("检查更新") { state.appUpdater.checkForUpdates() }
+                        .disabled(state.appUpdater.isBusy)
+                    Spacer()
+                    Toggle("启动时自动检查", isOn: $state.autoCheckAppUpdate)
+                        .toggleStyle(.checkbox)
+                }
+            }
+
             Section("帮助") {
                 HStack {
                     Text("使用说明、常见问题、故障排查")
@@ -368,6 +368,13 @@ struct SettingsView: View {
                     Spacer()
                     Button("打开帮助") { HelpWindow.show() }
                         .controlSize(.small)
+                }
+                HStack {
+                    Text("项目主页")
+                    Spacer()
+                    Link("github.com/jinqimu/Transend",
+                         destination: URL(string: "https://github.com/jinqimu/Transend")!)
+                        .font(.caption)
                 }
             }
         }
