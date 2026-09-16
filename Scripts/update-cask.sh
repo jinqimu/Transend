@@ -27,9 +27,9 @@ trap 'rm -f "$CHECKSUMS"' EXIT
 
 echo "==> 获取 v$VERSION 校验和"
 for url in \
-    "https://ghfast.top/$BASE/checksums.txt" \
-    "$BASE/checksums.txt"; do
-    if curl -fsSL --retry 2 --max-time 60 "$url" -o "$CHECKSUMS"; then
+    "$BASE/checksums.txt" \
+    "https://ghfast.top/$BASE/checksums.txt"; do
+    if curl -fsSL --connect-timeout 10 --max-time 30 --retry 1 "$url" -o "$CHECKSUMS"; then
         break
     fi
 done
