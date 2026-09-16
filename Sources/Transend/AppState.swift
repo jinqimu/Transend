@@ -231,9 +231,9 @@ final class AppState: ObservableObject {
         alert.messageText = isStale ? "辅助功能授权已失效" : "需要辅助功能权限"
         var info = "「选中即翻译」需要在按快捷键时读取你选中的文本。"
         if isStale {
-            info += "系统里可能仍显示 Transend 已授权，但未签名应用的授权与 App 二进制绑定，更新后会失效。\n点「一键修复」会清除失效记录并重新授权（等价于在系统设置里移除再添加）。"
+            info += "系统里可能仍显示 Transend 已授权，但未签名应用的授权与 App 二进制绑定，更新后会失效。\n点「一键修复」会清除失效记录；随后请在打开的「系统设置 → 辅助功能」列表里**打开 Transend 的开关**（macOS 不允许程序自动开启，需你手动确认一次）。"
         } else {
-            info += "请在「系统设置 → 隐私与安全性 → 辅助功能」中勾选 Transend。"
+            info += "请在「系统设置 → 隐私与安全性 → 辅助功能」列表里**打开 Transend 的开关**（需你手动确认一次）。"
         }
         alert.informativeText = info
         alert.addButton(withTitle: isStale ? "一键修复" : "打开系统设置")
