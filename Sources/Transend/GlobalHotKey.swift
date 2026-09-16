@@ -102,4 +102,10 @@ final class ClipboardMonitor {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : text
     }
+
+    /// 同步当前剪贴板状态（应用自身改动剪贴板后调用，避免被误判为"刚复制"）。
+    func syncChangeCount() {
+        lastPolledChangeCount = NSPasteboard.general.changeCount
+        lastChangeTime = .distantPast
+    }
 }

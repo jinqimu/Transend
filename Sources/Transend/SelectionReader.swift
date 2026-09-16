@@ -123,6 +123,89 @@ enum SelectionReader {
         return nil
     }
 
+    /// 读取选区：先走 AX，失败则回退「模拟 ⌘C + 读剪贴板」（对齐 TextGO）。
+    /// 浏览器的 AX 选区经常不可靠，兜底能保证「选中 → 快捷键」普遍可用。
+    /// - Returns: (文本, 是否动过剪贴板)；动过时调用方应同步剪贴板监控，避免误判"刚复制"。
+    @MainActor
+    static func readSelectedText() async -> (text: String?, usedClipboard: Bool) {
+        if let text = selectedText() { return (text, false) }
+        guard isTrusted else { return (nil, false) }
+        // 能读到选区范围且长度为 0 → 明确没有选区，跳过复制兜底（避免白等）
+        if let focused = copyElement(AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute as CFString),
+           selectionLength(focused) == 0 {
+            axLog("readSelectedText: 无选区，跳过复制兜底")
+            return (nil, false)
+        }
+        let result = await copySelectionToClipboard()
+        if let text = result.text { axLog("readSelectedText: 兜底复制成功，\(text.count) chars") }
+        return result
+    }
+
+    /// 焦点元素的选区长度；无法读取（属性不支持等）返回 nil。
+    private static func selectionLength(_ element: AXUIElement) -> Int? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &value) == .success,
+              let v = value, CFGetTypeID(v) == AXValueGetTypeID() else { return nil }
+        var range = CFRange()
+        guard AXValueGetValue((v as! AXValue), .cfRange, &range) else { return nil }
+        return range.length
+    }
+
+    /// 兜底：模拟 ⌘C 复制当前选区，读剪贴板后**还原**原剪贴板内容。
+    /// - 先释放触发快捷键时仍按住的修饰键（否则 ⌘C 会变成 ⌥⌘C）
+    /// - 轮询剪贴板变化（最长 ~600ms）；只有当剪贴板真的变了才还原（否则说明没有选区）
+    @MainActor
+    private static func copySelectionToClipboard() async -> (text: String?, usedClipboard: Bool) {
+        let pasteboard = NSPasteboard.general
+        let beforeChange = pasteboard.changeCount
+        let backup: [[NSPasteboard.PasteboardType: Data]] = (pasteboard.pasteboardItems ?? []).map { item in
+            var dict: [NSPasteboard.PasteboardType: Data] = [:]
+            for type in item.types {
+                if let data = item.data(forType: type) { dict[type] = data }
+            }
+            return dict
+        }
+
+        // 释放修饰键（Command/Shift/Option/Control），再发 ⌘C
+        for code: CGKeyCode in [55, 56, 58, 59] { postKey(code, down: false) }
+        postKey(8, down: true, flags: .maskCommand) // kVK_ANSI_C = 8
+        postKey(8, down: false, flags: .maskCommand)
+
+        var text: String?
+        var changed = false
+        for _ in 0..<15 { // 最长约 300ms（复制一般 <100ms）
+            try? await Task.sleep(nanoseconds: 20_000_000)
+            if pasteboard.changeCount != beforeChange {
+                changed = true
+                text = pasteboard.string(forType: .string)
+                if let t = text, !t.isEmpty { break }
+            }
+        }
+        // 剪贴板没变：没有选区，无需还原
+        guard changed else { return (nil, false) }
+
+        // 还原剪贴板
+        pasteboard.clearContents()
+        let restored = backup.map { dict -> NSPasteboardItem in
+            let item = NSPasteboardItem()
+            for (type, data) in dict { item.setData(data, forType: type) }
+            return item
+        }
+        if !restored.isEmpty { pasteboard.writeObjects(restored) }
+
+        guard let value = text?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+            return (nil, true)
+        }
+        return (value, true)
+    }
+
+    private static func postKey(_ code: CGKeyCode, down: Bool, flags: CGEventFlags = []) {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        guard let event = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: down) else { return }
+        event.flags = flags
+        event.post(tap: .cghidEventTap)
+    }
+
     /// 让 Chromium / Electron 应用启用无障碍树。
     /// 这类应用默认**按需**构建 AX 树，不声明客户端就只会返回空选区；
     /// 设置 `AXEnhancedUserInterface`（Chrome/Chromium）与 `AXManualAccessibility`（Electron）即可。

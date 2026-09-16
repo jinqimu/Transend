@@ -164,21 +164,30 @@ final class AppState: ObservableObject {
     /// 2. 刚复制/剪切过文本（剪贴板嗅探）
     /// 3. 都没有 → 弹出菜单栏弹窗并聚焦输入框（与点击菜单栏一致）
     func performQuickAction() {
-        if selectToTranslate, let selected = SelectionReader.selectedText() {
-            axLog("quick action: selection \(selected.count) chars")
-            input = selected
-            output = ""
-            message = nil
-            MenuBarController.shared.showPopover(keepInput: true)
-            return
-        }
-        if let text = clipboardMonitor.takeFreshText() {
-            input = text
-            output = ""
-            message = nil
-            MenuBarController.shared.showPopover(keepInput: true)
-        } else {
-            MenuBarController.shared.showPopover()
+        Task { @MainActor in
+            if selectToTranslate {
+                let selection = await SelectionReader.readSelectedText()
+                if let selected = selection.text {
+                    axLog("quick action: selection \(selected.count) chars")
+                    input = selected
+                    output = ""
+                    message = nil
+                    MenuBarController.shared.showPopover(keepInput: true)
+                    return
+                }
+                if selection.usedClipboard {
+                    // 兜底复制动过剪贴板（随后已还原）→ 同步，避免被误判为"刚复制"
+                    clipboardMonitor.syncChangeCount()
+                }
+            }
+            if let text = clipboardMonitor.takeFreshText() {
+                input = text
+                output = ""
+                message = nil
+                MenuBarController.shared.showPopover(keepInput: true)
+            } else {
+                MenuBarController.shared.showPopover()
+            }
         }
     }
 
