@@ -376,7 +376,7 @@ struct SettingsView: View {
                     HStack {
                         Text("版本")
                         Spacer()
-                        Text("0.1.1")
+                        Text("0.1.2")
                             .foregroundStyle(.secondary)
                         Image(systemName: "chevron.right")
                             .font(.caption2)
@@ -719,7 +719,7 @@ struct HelpView: View {
                 }
 
                 section("技术信息") {
-                    LabeledContent("版本", value: "0.1.1")
+                    LabeledContent("版本", value: "0.1.2")
                     LabeledContent("引擎版本", value: AppState.shared.updater.currentVersionDisplay)
                     LabeledContent("本地 API", value: "http://127.0.0.1:18632（OpenAI 兼容）")
                     LabeledContent("模型目录", value: "~/Library/Application Support/Transend/models")
@@ -796,9 +796,17 @@ struct ChangelogView: View {
             VStack(alignment: .leading, spacing: 20) {
                 Text("版本记录")
                     .font(.title2.bold())
-                Text("当前版本 0.1.1（快速开发版，随时更新）")
+                Text("当前版本 0.1.2（快速开发版，随时更新）")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                versionBlock("0.1.2", "2026-09-16", [
+                    "修复：开启「选中即翻译」后启动会弹出空的权限窗口——`selectToTranslate` 的 didSet 在初始化赋值时也会触发，改用 guard 屏蔽",
+                    "修复：明明未授权 / 授权失效，设置里却显示「已授权」——改为必须系统已信任且 AX 探针成功才算授权",
+                    "辅助功能状态改为功能探针（实测未授权返回 -25204/-25208），并结合「是否曾授权过」区分未授权 / 授权失效",
+                    "「一键修复」只弹系统授权提示（不再同时打开设置页），并明确提示需在系统设置里手动打开开关；未授权/失效时菜单栏弹窗用橙色横幅提示，不再启动弹窗打扰",
+                    "新增 HYMT2_AX_DEBUG 调试日志",
+                ])
 
                 versionBlock("0.1.1", "2026-09-15", [
                     "「选中即翻译」（可选，默认关）：选中文本 → 按全局快捷键直接翻译（读取系统辅助功能选区，无需先复制）。首次需在系统设置授权辅助功能；未公证应用权限与二进制绑定，更新后会重新提示授权",
