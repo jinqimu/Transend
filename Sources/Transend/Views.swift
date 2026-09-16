@@ -383,7 +383,7 @@ struct SettingsView: View {
                     HStack {
                         Text("版本")
                         Spacer()
-                        Text("0.1.2")
+                        Text("0.1.3")
                             .foregroundStyle(.secondary)
                         Image(systemName: "chevron.right")
                             .font(.caption2)
@@ -737,7 +737,7 @@ struct HelpView: View {
                 }
 
                 section("技术信息") {
-                    LabeledContent("版本", value: "0.1.2")
+                    LabeledContent("版本", value: "0.1.3")
                     LabeledContent("引擎版本", value: AppState.shared.updater.currentVersionDisplay)
                     LabeledContent("本地 API", value: "http://127.0.0.1:18632（OpenAI 兼容）")
                     LabeledContent("模型目录", value: "~/Library/Application Support/Transend/models")
@@ -814,9 +814,16 @@ struct ChangelogView: View {
             VStack(alignment: .leading, spacing: 20) {
                 Text("版本记录")
                     .font(.title2.bold())
-                Text("当前版本 0.1.2（快速开发版，随时更新）")
+                Text("当前版本 0.1.3（快速开发版，随时更新）")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                versionBlock("0.1.3", "2026-09-16", [
+                    "修复：授权成功后「选中即翻译」仍不可用——`AXIsProcessTrusted()` 是进程内缓存，用户中途授权不会刷新，改用实时查询 `AXIsProcessTrustedWithOptions(nil)`",
+                    "修复：「一键修复」在同一进程里再弹授权框是空操作（`kAXTrustedCheckOptionPrompt` 每进程只弹一次）——改为 `tccutil reset` + 重启 App，由新进程补弹授权提示",
+                    "新增「授权已生效，需重启 App」状态与「重启生效」按钮（授权后当前进程 AX 连接可能仍是旧的）",
+                    "选区读取增加子元素遍历兜底（兼容浏览器 / Electron 等焦点元素不直接暴露选区的 App）",
+                ])
 
                 versionBlock("0.1.2", "2026-09-16", [
                     "修复：开启「选中即翻译」后启动会弹出空的权限窗口——`selectToTranslate` 的 didSet 在初始化赋值时也会触发，改用 guard 屏蔽",
