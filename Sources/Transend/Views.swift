@@ -221,7 +221,7 @@ struct SettingsView: View {
 
     @State private var isRecordingShortcut = false
     @State private var recordingMonitor: Any?
-    @State private var axTrusted = SelectionReader.isTrusted
+    @State private var axState = SelectionReader.permissionState()
 
     var body: some View {
         Form {
@@ -318,15 +318,17 @@ struct SettingsView: View {
                 if state.selectToTranslate {
                     HStack(spacing: 6) {
                         Circle()
-                            .fill(axTrusted ? Color.green : Color.orange)
+                            .fill(axState == .granted ? Color.green : Color.orange)
                             .frame(width: 8, height: 8)
-                        Text(axTrusted ? "辅助功能权限：已授权" : "辅助功能权限：未授权")
+                        Text(axLabel(axState))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Spacer()
-                        if !axTrusted {
-                            Button("去授权") { state.reauthorizeAccessibility() }
-                                .controlSize(.small)
+                        if axState != .granted {
+                            Button(axState == .stale ? "一键修复" : "去授权") {
+                                state.repairAccessibility()
+                            }
+                            .controlSize(.small)
                         }
                     }
                 }
@@ -334,7 +336,7 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if state.selectToTranslate {
-                    Text("选中文本 → 按快捷键即可翻译；首次需在系统设置勾选 Transend（App 更新后权限失效会再次提示）")
+                    Text("选中文本 → 按快捷键即可翻译；首次需在系统设置勾选 Transend。更新后若提示授权失效，点「一键修复」重新授权即可")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -404,7 +406,16 @@ struct SettingsView: View {
         .frame(width: 460)
         .frame(minHeight: 380)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            axTrusted = SelectionReader.isTrusted
+            axState = SelectionReader.permissionState()
+        }
+    }
+
+    /// 辅助功能权限状态文案。
+    private func axLabel(_ s: SelectionReader.PermissionState) -> String {
+        switch s {
+        case .granted: return "辅助功能权限：已授权"
+        case .denied: return "辅助功能权限：未授权"
+        case .stale: return "辅助功能权限：授权已失效（需重新授权）"
         }
     }
 
@@ -676,7 +687,7 @@ struct HelpView: View {
                     faq("应用怎么更新？",
                         "应用会通过 GitHub Release 自动检查新版本（可在设置 →「应用更新」关闭）。普通安装（dmg/zip）可在设置里点「下载并安装」，自动替换并重启；Homebrew 安装请执行 brew update && brew upgrade --cask transend，两种方式使用同一产物、版本一致。")
                     faq("「选中即翻译」怎么用？",
-                        "设置 → 快捷翻译中开启后：选中任意文本 → 按全局快捷键，即可直接翻译（无需先复制）。首次需在「系统设置 → 隐私与安全性 → 辅助功能」中勾选 Transend。因应用未做 Apple 公证，辅助功能权限与程序绑定，每次更新后可能失效——应用会在更新后再次提示重新授权。")
+                        "设置 → 快捷翻译中开启后：选中任意文本 → 按全局快捷键，即可直接翻译（无需先复制）。首次需在「系统设置 → 隐私与安全性 → 辅助功能」中勾选 Transend。因应用未做 Apple 公证，辅助功能权限与二进制绑定，每次更新后可能失效——若系统里显示已授权却仍无法翻译，点设置里的「一键修复」清除失效授权后重新勾选即可。")
                     faq("离线能用吗？",
                         "模型下载完成后完全离线可用，翻译请求不会离开本机。")
                 }

@@ -177,43 +177,53 @@ final class AppState: ObservableObject {
 
     // MARK: - 选中即翻译（辅助功能权限）
 
-    /// 开启开关时调用：已授权则记录签名，未授权则提示。
+    /// 开启开关时调用：可用则记录签名，否则提示。
     func ensureSelectToTranslatePermission() {
-        if SelectionReader.isTrusted {
+        let state = SelectionReader.permissionState()
+        if state == .granted {
             UserDefaults.standard.set(binarySignature, forKey: Self.axBinaryKey)
             return
         }
-        promptAccessibility(afterUpdate: false)
+        promptAccessibility(state: state)
     }
 
-    /// 启动时检查：未授权、或二进制已变化（权限可能因更新而失效）→ 重新提示授权。
+    /// 启动时检查：每个二进制只提示一次（二进制变化可能使授权失效）。
     private func checkSelectToTranslatePermissionOnLaunch() {
         guard selectToTranslate else { return }
-        let current = binarySignature
-        let stored = UserDefaults.standard.string(forKey: Self.axBinaryKey)
-        guard !SelectionReader.isTrusted || stored != current else { return }
-        UserDefaults.standard.set(current, forKey: Self.axBinaryKey)
+        let signature = binarySignature
+        guard UserDefaults.standard.string(forKey: Self.axBinaryKey) != signature else { return }
+        UserDefaults.standard.set(signature, forKey: Self.axBinaryKey)
+        let state = SelectionReader.permissionState()
+        guard state != .granted else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            self?.promptAccessibility(afterUpdate: stored != nil)
+            self?.promptAccessibility(state: state)
         }
     }
 
-    /// 设置面板「重新授权」入口。
-    func reauthorizeAccessibility() {
+    /// 设置面板「修复授权」入口：清除失效的授权记录并重新授权。
+    func repairAccessibility() {
         UserDefaults.standard.set(binarySignature, forKey: Self.axBinaryKey)
+        if SelectionReader.permissionState() == .stale {
+            SelectionReader.resetPermission()
+        }
         SelectionReader.promptForPermission()
         SelectionReader.openSystemSettings()
     }
 
-    /// 提示用户授予 / 重新授予辅助功能权限。
-    private func promptAccessibility(afterUpdate: Bool) {
+    /// 提示用户授予 / 修复辅助功能权限。
+    private func promptAccessibility(state: SelectionReader.PermissionState) {
         let alert = NSAlert()
         alert.alertStyle = .informational
-        alert.messageText = afterUpdate ? "Transend 已更新，请重新授权辅助功能" : "需要辅助功能权限"
-        alert.informativeText = (afterUpdate
-            ? "未签名应用的辅助功能权限与 App 二进制绑定，更新后权限会失效。请重新勾选 Transend 以恢复「选中即翻译」。\n\n"
-            : "") + "「选中即翻译」需要在按快捷键时读取你选中的文本。请在「系统设置 → 隐私与安全性 → 辅助功能」中勾选 Transend。"
-        alert.addButton(withTitle: "打开系统设置")
+        let isStale = state == .stale
+        alert.messageText = isStale ? "辅助功能授权已失效" : "需要辅助功能权限"
+        var info = "「选中即翻译」需要在按快捷键时读取你选中的文本。"
+        if isStale {
+            info += "系统里可能仍显示 Transend 已授权，但未签名应用的授权与 App 二进制绑定，更新后会失效。\n点「一键修复」会清除失效记录并重新授权（等价于在系统设置里移除再添加）。"
+        } else {
+            info += "请在「系统设置 → 隐私与安全性 → 辅助功能」中勾选 Transend。"
+        }
+        alert.informativeText = info
+        alert.addButton(withTitle: isStale ? "一键修复" : "打开系统设置")
         alert.addButton(withTitle: "稍后")
 
         let previous = NSApp.activationPolicy()
@@ -221,6 +231,7 @@ final class AppState: ObservableObject {
         NSApp.activate(ignoringOtherApps: true)
         let response = alert.runModal()
         if response == .alertFirstButtonReturn {
+            if isStale { SelectionReader.resetPermission() }
             SelectionReader.promptForPermission()
             SelectionReader.openSystemSettings()
         }

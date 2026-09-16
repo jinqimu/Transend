@@ -8,8 +8,52 @@ import ApplicationServices
 /// 读取选区需要「辅助功能」权限；未授权时返回 nil，调用方回退到原有剪贴板流程。
 enum SelectionReader {
 
-    /// 是否已获得辅助功能权限。
+    /// 辅助功能授权状态。
+    /// - granted：授权有效，可读取选区
+    /// - denied：未授权
+    /// - stale：系统显示已授权，但授权记录与当前二进制不匹配（未签名应用更新后常见）
+    enum PermissionState: Equatable {
+        case granted
+        case denied
+        case stale
+    }
+
+    /// 是否已获得辅助功能权限（仅 TCC 层面，可能因 adhoc 更新而"假阳性"）。
     static var isTrusted: Bool { AXIsProcessTrusted() }
+
+    /// 真实可用性探测：不仅看 TCC，还实际调用一次 AX API。
+    /// adhoc 签名下更新后 TCC 记录会与运行时二进制不匹配，`isTrusted` 可能仍为 true，
+    /// 但 AX 调用会返回 `.apiDisabled` —— 据此区分 denied 与 stale。
+    static func permissionState() -> PermissionState {
+        let system = AXUIElementCreateSystemWide()
+        var value: CFTypeRef?
+        let error = AXUIElementCopyAttributeValue(
+            system, kAXFocusedApplicationAttribute as CFString, &value)
+        switch error {
+        case .apiDisabled:
+            return AXIsProcessTrusted() ? .stale : .denied
+        case .success, .noValue, .attributeUnsupported:
+            return .granted
+        default:
+            return AXIsProcessTrusted() ? .granted : .denied
+        }
+    }
+
+    /// 是否真实可用（推荐用它判断，而非 isTrusted）。
+    static var isFunctional: Bool { permissionState() == .granted }
+
+    /// 清除本 App 的辅助功能授权记录（修复更新后失效的授权），随后可重新授权。
+    /// 等价于在「系统设置 → 辅助功能」里移除再添加。
+    static func resetPermission() {
+        guard let bundleID = Bundle.main.bundleIdentifier else { return }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        process.arguments = ["reset", "Accessibility", bundleID]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try? process.run()
+        process.waitUntilExit()
+    }
 
     /// 触发系统授权弹窗（把本 App 加入「辅助功能」列表）。
     @discardableResult

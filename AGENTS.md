@@ -39,7 +39,8 @@
 - 菜单栏应用（LSUIElement，无 Dock 图标）：手动 `NSStatusItem` + `NSPopover`（内容复用 PopoverView）——不用 SwiftUI MenuBarExtra，因为其 popover 无法程序化弹出（快捷热键也需要右上角弹出）；设置 / 帮助 / 版本记录为手动 NSWindow，关闭联动恢复 `.accessory` 激活策略
 - 入口为手动 AppKit 生命周期（`TransendMain.main()` → `NSApplication.run()`），**不使用 SwiftUI `App`/`Settings` 场景**：空的 `Settings { EmptyView() }` 占位场景会成为唯一场景，导致启动时弹出空的 “Transend Settings” 幻影窗口（macOS 的 open-untitled-window 路径）
 - 快捷翻译：全局热键（Carbon，默认 ⌥⌘T，设置面板可录制自定义）+ 剪贴板嗅探（1s 轮询 changeCount，1.5s 时间窗），复制过文本则自动填入翻译，否则聚焦输入框
-- 选中即翻译（可选，默认关）：`SelectionReader.swift` 用辅助功能（Accessibility / `AXSelectedText`）读取前台 App 选区，按热键时优先于剪贴板；权限与二进制绑定，App 更新后失效——`AppState` 记录可执行文件签名（mtime+大小），启动时签名变化或未授权会弹窗提示重新授权（设置面板亦有「去授权」）
+- 选中即翻译（可选，默认关）：`SelectionReader.swift` 用辅助功能（Accessibility / `AXSelectedText`）读取前台 App 选区，按热键时优先于剪贴板；权限与二进制绑定（adhoc 签名的 `csreq` 钉在 cdhash 上），App 更新后 TCC 记录与运行时二进制不匹配 → 系统仍显示已授权但 AX 调用返回 `.apiDisabled`。判断用**功能探针** `SelectionReader.permissionState()`（实际调用一次 AX API）区分 granted/denied/stale；`AppState` 记录可执行文件签名（mtime+大小），启动时签名变化且状态异常会弹窗，`stale` 时提供「一键修复」= `tccutil reset Accessibility com.transend.app` + 重新授权（设置面板亦有入口）
+- 彻底避免更新后需重新授权：需用**稳定签名身份**（Developer ID，或固定自签名证书；`csreq` 变为 `identifier + certificate leaf` 而非 cdhash）；adhoc 无解
 - 本地 API 端口 18632 专属；启动时清扫孤儿进程
 - 下载源：HuggingFace / HF Mirror / modelscope（国内推荐）
 - 回复用户用中文
