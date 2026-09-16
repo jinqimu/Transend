@@ -21,36 +21,35 @@ enum SelectionReader {
     /// 是否已获得辅助功能权限（仅 TCC 层面，可能因 adhoc 更新而"假阳性"）。
     static var isTrusted: Bool { AXIsProcessTrusted() }
 
-    /// 真实可用性探测：不仅看 TCC，还实际调用一次 AX API。
+    /// 是否真实可用：必须 `AXIsProcessTrusted()` 为真 **且** AX API 调用成功。
     ///
     /// 注意：未授权 / 授权失效时，AX 调用返回的错误码并不统一
     /// （实测：未授权返回 -25204 cannotComplete 或 -25208 notImplemented；
-    /// 文档中的 -25211 apiDisabled 反而不常见）。所以**任何非 success/noValue 都视为不可用**，
-    /// 再用 `AXIsProcessTrusted()` 区分「未授权」与「授权失效（stale）」。
+    /// 文档中的 -25211 apiDisabled 反而不常见）。故任何非 success/noValue 都视为不可用。
+    /// 以 `AXIsProcessTrusted()` 为准是必要的：只看 API 是否成功，会在刚触发系统授权弹窗时误判为"已授权"。
+    static var isFunctional: Bool {
+        guard AXIsProcessTrusted() else { return false }
+        if probe() { return true }
+        Thread.sleep(forTimeInterval: 0.05)
+        let ok = probe()
+        if !ok { axLog("isFunctional: trusted but API probe failed -> not functional") }
+        return ok
+    }
+
+    /// 授权状态（stale / denied 的细分由调用方结合「是否曾授权」判断）。
     static func permissionState() -> PermissionState {
-        var lastRaw: Int32 = 0
-        for _ in 0..<2 {
-            let (usable, error) = probe()
-            if usable { return .granted }
-            lastRaw = error.rawValue
-            Thread.sleep(forTimeInterval: 0.05)
-        }
-        let trusted = AXIsProcessTrusted()
-        axLog("permissionState: probe failed (last error \(lastRaw)), isTrusted=\(trusted) -> \(trusted ? "stale" : "denied")")
-        return trusted ? .stale : .denied
+        if isFunctional { return .granted }
+        return AXIsProcessTrusted() ? .stale : .denied
     }
 
     /// 一次 AX 可用性探针。
-    private static func probe() -> (usable: Bool, error: AXError) {
+    private static func probe() -> Bool {
         let system = AXUIElementCreateSystemWide()
         var value: CFTypeRef?
         let error = AXUIElementCopyAttributeValue(
             system, kAXFocusedApplicationAttribute as CFString, &value)
-        return (error == .success || error == .noValue, error)
+        return error == .success || error == .noValue
     }
-
-    /// 是否真实可用（推荐用它判断，而非 isTrusted）。
-    static var isFunctional: Bool { permissionState() == .granted }
 
     /// 清除本 App 的辅助功能授权记录（修复更新后失效的授权），随后可重新授权。
     /// 等价于在「系统设置 → 辅助功能」里移除再添加。
@@ -70,13 +69,6 @@ enum SelectionReader {
     static func promptForPermission() -> Bool {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         return AXIsProcessTrustedWithOptions(options)
-    }
-
-    /// 打开「系统设置 → 隐私与安全性 → 辅助功能」。
-    static func openSystemSettings() {
-        guard let url = URL(
-            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else { return }
-        NSWorkspace.shared.open(url)
     }
 
     /// 读取当前前台 App 中选中的文本；无权限 / 无选区 / 选区为空时返回 nil。

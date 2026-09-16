@@ -213,13 +213,13 @@ final class AppState: ObservableObject {
         promptAccessibility(state: state)
     }
 
-    /// 设置面板 / 横幅「修复授权」入口：清除失效记录并重新授权。
+    /// 设置面板 / 横幅「修复授权」入口：清除失效记录并触发系统授权。
+    /// 只调用系统弹窗（其自带「打开系统设置」按钮），不再另行打开设置页，避免一次弹两个；
+    /// 也不立即刷新状态（此时尚未真正授权），回到 App 时按真实状态刷新。
     func repairAccessibility() {
         let state = currentAccessibilityState()
         if state == .stale { SelectionReader.resetPermission() }
         SelectionReader.promptForPermission()
-        SelectionReader.openSystemSettings()
-        refreshAccessibilityIssue()
     }
 
     /// 提示用户授予 / 修复辅助功能权限。
@@ -231,12 +231,12 @@ final class AppState: ObservableObject {
         alert.messageText = isStale ? "辅助功能授权已失效" : "需要辅助功能权限"
         var info = "「选中即翻译」需要在按快捷键时读取你选中的文本。"
         if isStale {
-            info += "系统里可能仍显示 Transend 已授权，但未签名应用的授权与 App 二进制绑定，更新后会失效。\n点「一键修复」会清除失效记录；随后请在打开的「系统设置 → 辅助功能」列表里**打开 Transend 的开关**（macOS 不允许程序自动开启，需你手动确认一次）。"
+            info += "系统里可能仍显示 Transend 已授权，但未签名应用的授权与 App 二进制绑定，更新后会失效。\n点下方按钮会清除失效记录并弹出系统授权提示：在提示里选「打开系统设置」，再打开 Transend 的开关（macOS 不允许程序自动开启，需你手动确认一次）。"
         } else {
-            info += "请在「系统设置 → 隐私与安全性 → 辅助功能」列表里**打开 Transend 的开关**（需你手动确认一次）。"
+            info += "点下方按钮后，在弹出的系统提示里选「打开系统设置」，再打开 Transend 的开关（需你手动确认一次）。"
         }
         alert.informativeText = info
-        alert.addButton(withTitle: isStale ? "一键修复" : "打开系统设置")
+        alert.addButton(withTitle: isStale ? "一键修复" : "去授权")
         alert.addButton(withTitle: "稍后")
 
         let previous = NSApp.activationPolicy()
@@ -246,7 +246,6 @@ final class AppState: ObservableObject {
         if response == .alertFirstButtonReturn {
             if isStale { SelectionReader.resetPermission() }
             SelectionReader.promptForPermission()
-            SelectionReader.openSystemSettings()
         }
         if previous == .accessory { NSApp.setActivationPolicy(.accessory) }
     }
