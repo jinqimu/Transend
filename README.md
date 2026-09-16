@@ -4,6 +4,11 @@ macOS 菜单栏翻译应用：内置标准 [llama.cpp](https://github.com/ggml-o
 
 ## 版本变更
 
+**0.1.4**（2026-09-16）
+- 选中即翻译对齐 TextGO：AX 读不到选区时兜底**模拟 ⌘C 复制并读剪贴板**（读完还原原剪贴板），Safari 等 AX 选区不可靠的 App 现在也能用
+- 浏览器/Electron：读取前启用 `AXEnhancedUserInterface`（Chrome）/ `AXManualAccessibility`（Electron），并按子元素遍历（depth≤6/≤300 节点）兜底
+- 兜底前释放触发热键按住的修饰键（避免 ⌘C 变成 ⌥⌘C）；无选区（选区范围长度为 0）时跳过兜底不白等
+
 **0.1.3**（2026-09-16）
 - 修复：授权成功后「选中即翻译」仍不可用——`AXIsProcessTrusted()` 是进程内缓存，用户中途授权不会刷新，改用实时查询 `AXIsProcessTrustedWithOptions(nil)`
 - 修复：「一键修复」在同一进程里再弹授权框是空操作（`kAXTrustedCheckOptionPrompt` 每进程只弹一次）——改为 `tccutil reset` + 重启 App，由新进程补弹授权提示

@@ -383,7 +383,7 @@ struct SettingsView: View {
                     HStack {
                         Text("版本")
                         Spacer()
-                        Text("0.1.3")
+                        Text("0.1.4")
                             .foregroundStyle(.secondary)
                         Image(systemName: "chevron.right")
                             .font(.caption2)
@@ -737,7 +737,7 @@ struct HelpView: View {
                 }
 
                 section("技术信息") {
-                    LabeledContent("版本", value: "0.1.3")
+                    LabeledContent("版本", value: "0.1.4")
                     LabeledContent("引擎版本", value: AppState.shared.updater.currentVersionDisplay)
                     LabeledContent("本地 API", value: "http://127.0.0.1:18632（OpenAI 兼容）")
                     LabeledContent("模型目录", value: "~/Library/Application Support/Transend/models")
@@ -814,9 +814,15 @@ struct ChangelogView: View {
             VStack(alignment: .leading, spacing: 20) {
                 Text("版本记录")
                     .font(.title2.bold())
-                Text("当前版本 0.1.3（快速开发版，随时更新）")
+                Text("当前版本 0.1.4（快速开发版，随时更新）")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                versionBlock("0.1.4", "2026-09-16", [
+                    "选中即翻译对齐 TextGO：AX 读不到选区时兜底**模拟 ⌘C 复制并读剪贴板**（读完还原原剪贴板），Safari 等 AX 选区不可靠的 App 现在也能用",
+                    "浏览器/Electron：读取前启用 `AXEnhancedUserInterface`（Chrome）/ `AXManualAccessibility`（Electron），并按子元素遍历（depth≤6/≤300 节点）兜底",
+                    "兜底前释放触发热键按住的修饰键（避免 ⌘C 变成 ⌥⌘C）；无选区（选区范围长度为 0）时跳过兜底不白等",
+                ])
 
                 versionBlock("0.1.3", "2026-09-16", [
                     "修复：授权成功后「选中即翻译」仍不可用——`AXIsProcessTrusted()` 是进程内缓存，用户中途授权不会刷新，改用实时查询 `AXIsProcessTrustedWithOptions(nil)`",
