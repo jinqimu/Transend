@@ -41,10 +41,18 @@ final class AppState: ObservableObject {
     /// 选中即翻译：选中文本后按全局快捷键，直接读取选区翻译（需辅助功能权限）
     @Published var selectToTranslate: Bool = false {
         didSet {
+            guard started else { return } // 初始化赋值不触发副作用（避免启动即弹权限窗）
             UserDefaults.standard.set(selectToTranslate, forKey: "selectToTranslate")
-            if selectToTranslate { ensureSelectToTranslatePermission() }
+            if selectToTranslate {
+                ensureSelectToTranslatePermission()
+            } else {
+                accessibilityIssue = nil
+            }
         }
     }
+
+    /// 选中即翻译不可用时的提示（nil = 正常或功能关闭）；用菜单栏横幅提示，避免启动弹窗打扰。
+    @Published var accessibilityIssue: SelectionReader.PermissionState?
 
     /// 快捷键的可读显示（如 ⌥⌘T / 已禁用）
     var hotKeyDisplay: String {
@@ -88,19 +96,8 @@ final class AppState: ObservableObject {
 
     private var started = false
 
-    /// 记录「辅助功能权限生效时」的可执行文件签名（mtime+大小），用于更新后重新提示授权。
-    /// 用二进制签名而非版本号：同版本覆盖更新（如修复重发）也会改变二进制、使权限失效。
-    private static let axBinaryKey = "selectToTranslateTrustedBinary"
-
-    /// 当前可执行文件签名（mtime + 大小）。
-    private var binarySignature: String {
-        guard let url = Bundle.main.executableURL,
-              let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]) else {
-            return "unknown"
-        }
-        let t = Int(values.contentModificationDate?.timeIntervalSince1970 ?? 0)
-        return "\(t)-\(values.fileSize ?? 0)"
-    }
+    /// 是否曾成功获得辅助功能授权（用于区分「未授权」与「授权已失效」）。
+    private static let axEverGrantedKey = "selectToTranslateEverGranted"
 
     private init() {
         let ud = UserDefaults.standard
@@ -112,6 +109,11 @@ final class AppState: ObservableObject {
         autoClearInput = ud.object(forKey: "autoClearInput") as? Bool ?? false
         autoCheckAppUpdate = ud.object(forKey: "autoCheckAppUpdate") as? Bool ?? true
         selectToTranslate = ud.object(forKey: "selectToTranslate") as? Bool ?? false
+        // 迁移：旧版用可执行文件签名记录授权，存在即视为「曾授权过」
+        if !ud.bool(forKey: Self.axEverGrantedKey),
+           ud.string(forKey: "selectToTranslateTrustedBinary") != nil {
+            UserDefaults.standard.set(true, forKey: Self.axEverGrantedKey)
+        }
     }
 
     // MARK: - 启动
@@ -140,8 +142,8 @@ final class AppState: ObservableObject {
         if hotKeyKeyCode > 0 {
             hotKey.register(keyCode: UInt32(hotKeyKeyCode), modifiers: hotKeyModifiers)
         }
-        // 选中即翻译：辅助功能权限与二进制绑定，App 更新后可能失效 → 版本变化时重新提示授权
-        checkSelectToTranslatePermissionOnLaunch()
+        // 选中即翻译：刷新辅助功能可用性（不可用时用横幅提示，不弹窗）
+        refreshAccessibilityIssue()
     }
 
     /// 快捷键变更后重新注册（设置界面实时生效）
@@ -159,6 +161,7 @@ final class AppState: ObservableObject {
     /// 3. 都没有 → 弹出菜单栏弹窗并聚焦输入框（与点击菜单栏一致）
     func performQuickAction() {
         if selectToTranslate, let selected = SelectionReader.selectedText() {
+            axLog("quick action: selection \(selected.count) chars")
             input = selected
             output = ""
             message = nil
@@ -177,41 +180,51 @@ final class AppState: ObservableObject {
 
     // MARK: - 选中即翻译（辅助功能权限）
 
-    /// 开启开关时调用：可用则记录签名，否则提示。
-    func ensureSelectToTranslatePermission() {
-        let state = SelectionReader.permissionState()
-        if state == .granted {
-            UserDefaults.standard.set(binarySignature, forKey: Self.axBinaryKey)
-            return
+    /// 启动 / 回到前台时刷新：可用则记「曾授权」，不可用则设置横幅提示（不弹窗打扰）。
+    func refreshAccessibilityIssue() {
+        guard selectToTranslate else { accessibilityIssue = nil; return }
+        if SelectionReader.isFunctional {
+            UserDefaults.standard.set(true, forKey: Self.axEverGrantedKey)
+            accessibilityIssue = nil
+            axLog("refresh: functional")
+        } else {
+            // 曾授权过 → 授权失效（adhoc 更新后常见）；从未授权 → 未授权
+            let everGranted = UserDefaults.standard.bool(forKey: Self.axEverGrantedKey)
+            accessibilityIssue = everGranted ? .stale : .denied
+            axLog("refresh: not functional, everGranted=\(everGranted) -> \(String(describing: accessibilityIssue))")
         }
+    }
+
+    /// 当前辅助功能状态（结合「是否曾授权」区分 stale/denied）。
+    private func currentAccessibilityState() -> SelectionReader.PermissionState {
+        if SelectionReader.isFunctional {
+            UserDefaults.standard.set(true, forKey: Self.axEverGrantedKey)
+            return .granted
+        }
+        return UserDefaults.standard.bool(forKey: Self.axEverGrantedKey) ? .stale : .denied
+    }
+
+    /// 用户开启开关时调用（显式操作，可弹窗）。
+    func ensureSelectToTranslatePermission() {
+        let state = currentAccessibilityState()
+        axLog("toggle on: state=\(state)")
+        accessibilityIssue = (state == .granted) ? nil : state
+        guard state != .granted else { return }
         promptAccessibility(state: state)
     }
 
-    /// 启动时检查：每个二进制只提示一次（二进制变化可能使授权失效）。
-    private func checkSelectToTranslatePermissionOnLaunch() {
-        guard selectToTranslate else { return }
-        let signature = binarySignature
-        guard UserDefaults.standard.string(forKey: Self.axBinaryKey) != signature else { return }
-        UserDefaults.standard.set(signature, forKey: Self.axBinaryKey)
-        let state = SelectionReader.permissionState()
-        guard state != .granted else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            self?.promptAccessibility(state: state)
-        }
-    }
-
-    /// 设置面板「修复授权」入口：清除失效的授权记录并重新授权。
+    /// 设置面板 / 横幅「修复授权」入口：清除失效记录并重新授权。
     func repairAccessibility() {
-        UserDefaults.standard.set(binarySignature, forKey: Self.axBinaryKey)
-        if SelectionReader.permissionState() == .stale {
-            SelectionReader.resetPermission()
-        }
+        let state = currentAccessibilityState()
+        if state == .stale { SelectionReader.resetPermission() }
         SelectionReader.promptForPermission()
         SelectionReader.openSystemSettings()
+        refreshAccessibilityIssue()
     }
 
     /// 提示用户授予 / 修复辅助功能权限。
     private func promptAccessibility(state: SelectionReader.PermissionState) {
+        axLog("promptAccessibility state=\(state)")
         let alert = NSAlert()
         alert.alertStyle = .informational
         let isStale = state == .stale

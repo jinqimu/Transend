@@ -58,6 +58,7 @@ final class MenuBarController {
     /// - Parameter keepInput: true 表示热键已带入待翻译文本（跳过"再次进入清空"并自动翻译）。
     func showPopover(keepInput: Bool = false) {
         let state = AppState.shared
+        state.refreshAccessibilityIssue() // 打开弹窗时刷新辅助功能状态（可能刚去系统设置授权）
         if state.autoClearInput && !keepInput {
             state.input = ""
         }

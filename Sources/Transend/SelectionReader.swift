@@ -22,21 +22,31 @@ enum SelectionReader {
     static var isTrusted: Bool { AXIsProcessTrusted() }
 
     /// 真实可用性探测：不仅看 TCC，还实际调用一次 AX API。
-    /// adhoc 签名下更新后 TCC 记录会与运行时二进制不匹配，`isTrusted` 可能仍为 true，
-    /// 但 AX 调用会返回 `.apiDisabled` —— 据此区分 denied 与 stale。
+    ///
+    /// 注意：未授权 / 授权失效时，AX 调用返回的错误码并不统一
+    /// （实测：未授权返回 -25204 cannotComplete 或 -25208 notImplemented；
+    /// 文档中的 -25211 apiDisabled 反而不常见）。所以**任何非 success/noValue 都视为不可用**，
+    /// 再用 `AXIsProcessTrusted()` 区分「未授权」与「授权失效（stale）」。
     static func permissionState() -> PermissionState {
+        var lastRaw: Int32 = 0
+        for _ in 0..<2 {
+            let (usable, error) = probe()
+            if usable { return .granted }
+            lastRaw = error.rawValue
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        let trusted = AXIsProcessTrusted()
+        axLog("permissionState: probe failed (last error \(lastRaw)), isTrusted=\(trusted) -> \(trusted ? "stale" : "denied")")
+        return trusted ? .stale : .denied
+    }
+
+    /// 一次 AX 可用性探针。
+    private static func probe() -> (usable: Bool, error: AXError) {
         let system = AXUIElementCreateSystemWide()
         var value: CFTypeRef?
         let error = AXUIElementCopyAttributeValue(
             system, kAXFocusedApplicationAttribute as CFString, &value)
-        switch error {
-        case .apiDisabled:
-            return AXIsProcessTrusted() ? .stale : .denied
-        case .success, .noValue, .attributeUnsupported:
-            return .granted
-        default:
-            return AXIsProcessTrusted() ? .granted : .denied
-        }
+        return (error == .success || error == .noValue, error)
     }
 
     /// 是否真实可用（推荐用它判断，而非 isTrusted）。
@@ -72,19 +82,25 @@ enum SelectionReader {
     /// 读取当前前台 App 中选中的文本；无权限 / 无选区 / 选区为空时返回 nil。
     /// 会排除本 App 自身（避免读到 Transend 自己输入框里的选区）。
     static func selectedText() -> String? {
-        guard AXIsProcessTrusted() else { return nil }
+        guard AXIsProcessTrusted() else { axLog("selectedText: not trusted"); return nil }
         let system = AXUIElementCreateSystemWide()
 
         // 排除自身：读取当前焦点 App 的 pid
         if let app = copyElement(system, kAXFocusedApplicationAttribute as CFString),
            let pid = pid(of: app), pid == getpid() {
+            axLog("selectedText: focused app is self")
             return nil
         }
 
         guard let focused = copyElement(system, kAXFocusedUIElementAttribute as CFString),
-              let text = copyString(focused, kAXSelectedTextAttribute as CFString) else { return nil }
+              let text = copyString(focused, kAXSelectedTextAttribute as CFString) else {
+            axLog("selectedText: no focused element or no selected text")
+            return nil
+        }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+        guard !trimmed.isEmpty else { axLog("selectedText: empty"); return nil }
+        axLog("selectedText: got \(trimmed.count) chars")
+        return trimmed
     }
 
     // MARK: - AX 工具
@@ -106,4 +122,11 @@ enum SelectionReader {
         var pid: pid_t = 0
         return AXUIElementGetPid(element, &pid) == .success ? pid : nil
     }
+}
+
+// MARK: - 调试日志（HYMT2_AX_DEBUG=1；用 `log show` 查看）
+
+func axLog(_ message: String) {
+    guard ProcessInfo.processInfo.environment["HYMT2_AX_DEBUG"] == "1" else { return }
+    NSLog("[TransendAX] %@", message)
 }

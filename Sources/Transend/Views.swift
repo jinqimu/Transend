@@ -32,6 +32,7 @@ struct PopoverView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             statusHeader
+            accessibilityBanner
             appUpdateBanner
             engineUpdateBanner
             if state.downloader.isDownloading {
@@ -71,6 +72,32 @@ struct PopoverView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+        }
+    }
+
+    /// 选中即翻译不可用（未授权 / 授权失效）时的提示条：点此修复或授权
+    @ViewBuilder
+    private var accessibilityBanner: some View {
+        if state.selectToTranslate, let issue = state.accessibilityIssue {
+            Button {
+                state.repairAccessibility()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text(issue == .stale
+                         ? "选中即翻译：辅助功能授权已失效，点此一键修复…"
+                         : "选中即翻译：请在系统设置授权辅助功能，点此处理…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Spacer()
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.orange.opacity(0.12)))
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -221,7 +248,6 @@ struct SettingsView: View {
 
     @State private var isRecordingShortcut = false
     @State private var recordingMonitor: Any?
-    @State private var axState = SelectionReader.permissionState()
 
     var body: some View {
         Form {
@@ -318,14 +344,14 @@ struct SettingsView: View {
                 if state.selectToTranslate {
                     HStack(spacing: 6) {
                         Circle()
-                            .fill(axState == .granted ? Color.green : Color.orange)
+                            .fill(state.accessibilityIssue == nil ? Color.green : Color.orange)
                             .frame(width: 8, height: 8)
-                        Text(axLabel(axState))
+                        Text(axLabel(state.accessibilityIssue))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Spacer()
-                        if axState != .granted {
-                            Button(axState == .stale ? "一键修复" : "去授权") {
+                        if let issue = state.accessibilityIssue {
+                            Button(issue == .stale ? "一键修复" : "去授权") {
                                 state.repairAccessibility()
                             }
                             .controlSize(.small)
@@ -406,16 +432,16 @@ struct SettingsView: View {
         .frame(width: 460)
         .frame(minHeight: 380)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            axState = SelectionReader.permissionState()
+            state.refreshAccessibilityIssue()
         }
     }
 
     /// 辅助功能权限状态文案。
-    private func axLabel(_ s: SelectionReader.PermissionState) -> String {
-        switch s {
-        case .granted: return "辅助功能权限：已授权"
-        case .denied: return "辅助功能权限：未授权"
-        case .stale: return "辅助功能权限：授权已失效（需重新授权）"
+    private func axLabel(_ issue: SelectionReader.PermissionState?) -> String {
+        switch issue {
+        case .none, .some(.granted): return "辅助功能权限：已授权"
+        case .some(.denied): return "辅助功能权限：未授权"
+        case .some(.stale): return "辅助功能权限：授权已失效（需重新授权）"
         }
     }
 
