@@ -98,40 +98,58 @@ enum SelectionReader {
         guard isTrusted else { axLog("selectedText: not trusted"); return nil }
         let system = AXUIElementCreateSystemWide()
 
-        // 排除自身：读取当前焦点 App 的 pid
-        if let app = copyElement(system, kAXFocusedApplicationAttribute as CFString),
-           let pid = pid(of: app), pid == getpid() {
-            axLog("selectedText: focused app is self")
-            return nil
+        // 焦点 App：排除自身；并让浏览器 / Electron 构建无障碍树（否则读不到选区）
+        if let app = copyElement(system, kAXFocusedApplicationAttribute as CFString) {
+            if let pid = pid(of: app), pid == getpid() {
+                axLog("selectedText: focused app is self")
+                return nil
+            }
+            enableChromiumAccessibility(app)
         }
 
-        guard let focused = copyElement(system, kAXFocusedUIElementAttribute as CFString) else {
-            axLog("selectedText: no focused element")
-            return nil
+        // 浏览器启用 AX 后建树是异步的，首次可能为空 → 短重试几次
+        for attempt in 0..<3 {
+            if let focused = copyElement(system, kAXFocusedUIElementAttribute as CFString),
+               let text = selectedText(from: focused, maxDepth: 6, maxNodes: 300) {
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    axLog("selectedText: got \(trimmed.count) chars (attempt \(attempt + 1))")
+                    return trimmed
+                }
+            }
+            if attempt < 2 { Thread.sleep(forTimeInterval: 0.06) }
         }
-        guard let text = selectedText(from: focused) else {
-            axLog("selectedText: no selected text")
-            return nil
-        }
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { axLog("selectedText: empty"); return nil }
-        axLog("selectedText: got \(trimmed.count) chars")
-        return trimmed
+        axLog("selectedText: no selected text")
+        return nil
     }
 
-    /// 在元素及其子元素中查找 AXSelectedText（广度优先，深度 ≤3、总节点 ≤200，避免大量 AX 调用卡顿）。
-    private static func selectedText(from element: AXUIElement) -> String? {
+    /// 让 Chromium / Electron 应用启用无障碍树。
+    /// 这类应用默认**按需**构建 AX 树，不声明客户端就只会返回空选区；
+    /// 设置 `AXEnhancedUserInterface`（Chrome/Chromium）与 `AXManualAccessibility`（Electron）即可。
+    /// 参考 selection-hook / TextGO 的实现。
+    private static func enableChromiumAccessibility(_ app: AXUIElement) {
+        for attribute in ["AXEnhancedUserInterface", "AXManualAccessibility"] {
+            var settable: DarwinBoolean = false
+            guard AXUIElementIsAttributeSettable(app, attribute as CFString, &settable) == .success,
+                  settable.boolValue else { continue }
+            let result = AXUIElementSetAttributeValue(app, attribute as CFString, kCFBooleanTrue)
+            axLog("enable \(attribute): \(result == .success ? "ok" : "err \(result.rawValue)")")
+        }
+    }
+
+    /// 在元素及其子元素中查找 AXSelectedText（广度优先，深度 / 总节点受限，避免大量 AX 调用卡顿）。
+    private static func selectedText(from element: AXUIElement, maxDepth: Int, maxNodes: Int) -> String? {
         var queue: [(element: AXUIElement, depth: Int)] = [(element, 0)]
         var visited = 0
         var index = 0
-        while index < queue.count, visited < 200 {
+        while index < queue.count, visited < maxNodes {
             let (el, depth) = queue[index]
             index += 1
             visited += 1
             if let text = copyString(el, kAXSelectedTextAttribute as CFString), !text.isEmpty {
                 return text
             }
-            guard depth < 3,
+            guard depth < maxDepth,
                   let children = copyElementArray(el, kAXChildrenAttribute as CFString) else { continue }
             for child in children.prefix(30) {
                 queue.append((child, depth + 1))
