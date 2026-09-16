@@ -22,6 +22,7 @@
 ## 常用命令
 
 - 构建：`./Scripts/build-app.sh`（产物 `dist/Transend.app`）
+- 本地开发构建（独立身份，避免与 brew 安装版在辅助功能授权/偏好上冲突）：`DEV=1 ./Scripts/build-app.sh`（产物 `dist/Transend Dev.app`，bundle id `com.transend.app.dev`，显示名 `Transend Dev`）；发布/CI 不要带 `DEV`
 - 打包 dmg：`./Scripts/make-dmg.sh`（hdiutil 需设备访问权限）
 - 打包 zip：`./Scripts/distribute.sh`
 - 直接运行二进制（环境变量钩子生效）：`dist/Transend.app/Contents/MacOS/Transend`
@@ -41,6 +42,7 @@
 - 快捷翻译：全局热键（Carbon，默认 ⌥⌘T，设置面板可录制自定义）+ 剪贴板嗅探（1s 轮询 changeCount，1.5s 时间窗），复制过文本则自动填入翻译，否则聚焦输入框
 - 选中即翻译（可选，默认关）：`SelectionReader.swift` 用辅助功能读取前台 App 选区（焦点元素 `AXSelectedText`，找不到时按子元素 BFS 兜底，depth≤3 / ≤200 节点），按热键时优先于剪贴板。**权限坑**：① adhoc 签名的 `csreq` 钉在 cdhash 上，App 更新后 TCC 记录与二进制不匹配；② `AXIsProcessTrusted()` 是**进程内缓存**，用户中途授权不会刷新，必须用 `AXIsProcessTrustedWithOptions(nil)` 实时查询；③ `kAXTrustedCheckOptionPrompt` **每进程只弹一次**，`tccutil reset` 后必须**重启进程**才会再弹；④ 授权后当前进程的 AX 连接可能仍是旧的，需重启生效。故判断用「实时 isTrusted + AX 探针」，结合「是否曾授权过」分 granted/denied/stale/needsRestart；`stale` = `tccutil reset` + 重启（`resetAndRelaunch`，新进程启动时补弹授权框）；`needsRestart` = 重启生效；启动/打开弹窗用横幅提示（不弹模态）。线程注意：`selectToTranslate` 的 `didSet` 在 `@Published` + init 赋值时也会触发，用 `guard started` 屏蔽，避免启动即弹权限窗
 - 彻底避免更新后需重新授权：需用**稳定签名身份**（Developer ID，或固定自签名证书；`csreq` 变为 `identifier + certificate leaf` 而非 cdhash）；adhoc 无解
+- 本地测试注意：`dist/Transend.app`（bundle id `com.transend.app`）与 brew 安装的 `/Applications/Transend.app` 同号，会导致 TCC 授权/UserDefaults 互相串、LaunchServices 分不清；本地开发请用 `DEV=1` 构建的 `Transend Dev.app`（独立 bundle id）
 - 本地 API 端口 18632 专属；启动时清扫孤儿进程
 - 下载源：HuggingFace / HF Mirror / modelscope（国内推荐）
 - 回复用户用中文

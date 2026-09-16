@@ -4,10 +4,22 @@
 #   2. swift build -c release
 #   3. 组装 dist/Transend.app（引擎内置在 Resources/engine）
 #   4. ad-hoc 签名
+#
+# DEV=1：本地开发用独立身份（dist/Transend Dev.app，bundle id com.transend.app.dev，
+#        名字 "Transend Dev"），避免与 brew 安装版 com.transend.app 在
+#        辅助功能(TCC)授权、UserDefaults 上互相冲突。发布/CI 不要带 DEV。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-APP_NAME="Transend"
+if [ "${DEV:-}" = "1" ]; then
+    APP_NAME="Transend Dev"
+    BUNDLE_ID="com.transend.app.dev"
+    DISPLAY_NAME="Transend Dev"
+else
+    APP_NAME="Transend"
+    BUNDLE_ID="com.transend.app"
+    DISPLAY_NAME="Transend"
+fi
 DIST="$ROOT/dist"
 APP="$DIST/$APP_NAME.app"
 LLAMA_VERSION="${LLAMA_VERSION:-b10472}"
@@ -39,6 +51,10 @@ rm -rf "$APP" "$DIST/HyMT2.app" # 顺带清理旧名残留
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/engine"
 cp "$ROOT/.build/release/Transend" "$APP/Contents/MacOS/"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+# 写入身份（DEV 版用独立 bundle id / 名称，避免与 brew 版冲突）
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleName $DISPLAY_NAME" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $DISPLAY_NAME" "$APP/Contents/Info.plist"
 [ -f "$ROOT/Resources/AppIcon.icns" ] && cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/"
 # 整个解压目录拷入（llama-server + 依赖 dylib）
 cp -R "$LLAMA_SRC_DIR"/. "$APP/Contents/Resources/engine/"
