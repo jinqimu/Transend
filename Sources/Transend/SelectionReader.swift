@@ -11,35 +11,34 @@ enum SelectionReader {
     /// 辅助功能授权状态。
     /// - granted：授权有效，可读取选区
     /// - denied：未授权
-    /// - stale：系统显示已授权，但授权记录与当前二进制不匹配（未签名应用更新后常见）
+    /// - stale：曾授权，但授权记录与当前二进制不匹配（adhoc 更新后常见）
+    /// - needsRestart：TCC 已信任，但当前进程的 AX 连接未生效，需重启 App
     enum PermissionState: Equatable {
         case granted
         case denied
         case stale
+        case needsRestart
     }
 
-    /// 是否已获得辅助功能权限（仅 TCC 层面，可能因 adhoc 更新而"假阳性"）。
-    static var isTrusted: Bool { AXIsProcessTrusted() }
-
-    /// 是否真实可用：必须 `AXIsProcessTrusted()` 为真 **且** AX API 调用成功。
+    /// 实时查询 TCC 授权状态。
     ///
-    /// 注意：未授权 / 授权失效时，AX 调用返回的错误码并不统一
+    /// 必须用 `AXIsProcessTrustedWithOptions(nil)` 而非 `AXIsProcessTrusted()`：
+    /// 后者返回**进程内缓存值**，用户在系统设置里改授权后不会刷新，
+    /// 导致"明明已授权却一直报未授权"。带 options 的版本会实时询问 TCC。
+    static var isTrusted: Bool { AXIsProcessTrustedWithOptions(nil) }
+
+    /// 是否真实可用：TCC 已信任 **且** AX API 调用成功。
+    ///
+    /// 未授权 / 授权失效时 AX 调用返回的错误码并不统一
     /// （实测：未授权返回 -25204 cannotComplete 或 -25208 notImplemented；
-    /// 文档中的 -25211 apiDisabled 反而不常见）。故任何非 success/noValue 都视为不可用。
-    /// 以 `AXIsProcessTrusted()` 为准是必要的：只看 API 是否成功，会在刚触发系统授权弹窗时误判为"已授权"。
+    /// 文档中的 -25211 apiDisabled 反而不常见），故任何非 success/noValue 都视为不可用。
     static var isFunctional: Bool {
-        guard AXIsProcessTrusted() else { return false }
+        guard isTrusted else { return false }
         if probe() { return true }
         Thread.sleep(forTimeInterval: 0.05)
         let ok = probe()
-        if !ok { axLog("isFunctional: trusted but API probe failed -> not functional") }
+        if !ok { axLog("isFunctional: trusted but API probe failed -> 需重启进程") }
         return ok
-    }
-
-    /// 授权状态（stale / denied 的细分由调用方结合「是否曾授权」判断）。
-    static func permissionState() -> PermissionState {
-        if isFunctional { return .granted }
-        return AXIsProcessTrusted() ? .stale : .denied
     }
 
     /// 一次 AX 可用性探针。
@@ -71,10 +70,32 @@ enum SelectionReader {
         return AXIsProcessTrustedWithOptions(options)
     }
 
+    // MARK: - 修复 / 重启
+
+    /// 重启自身。授权后当前进程的 AX 连接可能仍是旧的；reset 后也需要新进程才能
+    /// 再次弹出系统授权框（`kAXTrustedCheckOptionPrompt` 每个进程只弹一次，旧进程里再调用是空操作）。
+    @MainActor
+    static func relaunchSelf() {
+        let path = Bundle.main.bundleURL.path.replacingOccurrences(of: "'", with: "'\\''")
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        task.arguments = ["-c", "sleep 0.6; /usr/bin/open '\(path)'"]
+        try? task.run()
+        NSApp.terminate(nil)
+    }
+
+    /// 「一键修复」：清除失效的 TCC 记录并重启，重启后由新进程弹出系统授权框。
+    @MainActor
+    static func resetAndRelaunch() {
+        resetPermission()
+        UserDefaults.standard.set(true, forKey: "axRecoverPending")
+        relaunchSelf()
+    }
+
     /// 读取当前前台 App 中选中的文本；无权限 / 无选区 / 选区为空时返回 nil。
-    /// 会排除本 App 自身（避免读到 Transend 自己输入框里的选区）。
+    /// 排除本 App 自身；焦点元素没有选区时向下遍历子元素（浏览器 / Electron 常见）。
     static func selectedText() -> String? {
-        guard AXIsProcessTrusted() else { axLog("selectedText: not trusted"); return nil }
+        guard isTrusted else { axLog("selectedText: not trusted"); return nil }
         let system = AXUIElementCreateSystemWide()
 
         // 排除自身：读取当前焦点 App 的 pid
@@ -84,15 +105,39 @@ enum SelectionReader {
             return nil
         }
 
-        guard let focused = copyElement(system, kAXFocusedUIElementAttribute as CFString),
-              let text = copyString(focused, kAXSelectedTextAttribute as CFString) else {
-            axLog("selectedText: no focused element or no selected text")
+        guard let focused = copyElement(system, kAXFocusedUIElementAttribute as CFString) else {
+            axLog("selectedText: no focused element")
+            return nil
+        }
+        guard let text = selectedText(from: focused) else {
+            axLog("selectedText: no selected text")
             return nil
         }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { axLog("selectedText: empty"); return nil }
         axLog("selectedText: got \(trimmed.count) chars")
         return trimmed
+    }
+
+    /// 在元素及其子元素中查找 AXSelectedText（广度优先，深度 ≤3、总节点 ≤200，避免大量 AX 调用卡顿）。
+    private static func selectedText(from element: AXUIElement) -> String? {
+        var queue: [(element: AXUIElement, depth: Int)] = [(element, 0)]
+        var visited = 0
+        var index = 0
+        while index < queue.count, visited < 200 {
+            let (el, depth) = queue[index]
+            index += 1
+            visited += 1
+            if let text = copyString(el, kAXSelectedTextAttribute as CFString), !text.isEmpty {
+                return text
+            }
+            guard depth < 3,
+                  let children = copyElementArray(el, kAXChildrenAttribute as CFString) else { continue }
+            for child in children.prefix(30) {
+                queue.append((child, depth + 1))
+            }
+        }
+        return nil
     }
 
     // MARK: - AX 工具
@@ -102,6 +147,12 @@ enum SelectionReader {
         guard AXUIElementCopyAttributeValue(element, attribute, &value) == .success,
               let v = value, CFGetTypeID(v) == AXUIElementGetTypeID() else { return nil }
         return (v as! AXUIElement)
+    }
+
+    private static func copyElementArray(_ element: AXUIElement, _ attribute: CFString) -> [AXUIElement]? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute, &value) == .success else { return nil }
+        return value as? [AXUIElement]
     }
 
     private static func copyString(_ element: AXUIElement, _ attribute: CFString) -> String? {

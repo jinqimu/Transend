@@ -99,6 +99,9 @@ final class AppState: ObservableObject {
     /// 是否曾成功获得辅助功能授权（用于区分「未授权」与「授权已失效」）。
     private static let axEverGrantedKey = "selectToTranslateEverGranted"
 
+    /// 修复流程重启后待弹出系统授权框。
+    private static let axRecoverPendingKey = "axRecoverPending"
+
     private init() {
         let ud = UserDefaults.standard
         selectedModelID = ud.string(forKey: "selectedModelID") ?? ModelProfile.available[0].id
@@ -144,6 +147,7 @@ final class AppState: ObservableObject {
         }
         // 选中即翻译：刷新辅助功能可用性（不可用时用横幅提示，不弹窗）
         refreshAccessibilityIssue()
+        handlePendingAccessibilityRecovery()
     }
 
     /// 快捷键变更后重新注册（设置界面实时生效）
@@ -183,24 +187,29 @@ final class AppState: ObservableObject {
     /// 启动 / 回到前台时刷新：可用则记「曾授权」，不可用则设置横幅提示（不弹窗打扰）。
     func refreshAccessibilityIssue() {
         guard selectToTranslate else { accessibilityIssue = nil; return }
-        if SelectionReader.isFunctional {
+        let trusted = SelectionReader.isTrusted
+        let functional = SelectionReader.isFunctional
+        if functional {
             UserDefaults.standard.set(true, forKey: Self.axEverGrantedKey)
             accessibilityIssue = nil
-            axLog("refresh: functional")
+        } else if trusted {
+            // TCC 已信任，但当前进程 AX 未生效（授权后未重启）→ 需重启
+            accessibilityIssue = .needsRestart
         } else {
             // 曾授权过 → 授权失效（adhoc 更新后常见）；从未授权 → 未授权
-            let everGranted = UserDefaults.standard.bool(forKey: Self.axEverGrantedKey)
-            accessibilityIssue = everGranted ? .stale : .denied
-            axLog("refresh: not functional, everGranted=\(everGranted) -> \(String(describing: accessibilityIssue))")
+            accessibilityIssue = UserDefaults.standard.bool(forKey: Self.axEverGrantedKey) ? .stale : .denied
         }
+        axLog("refresh: trusted=\(trusted) functional=\(functional) -> \(String(describing: accessibilityIssue))")
     }
 
-    /// 当前辅助功能状态（结合「是否曾授权」区分 stale/denied）。
+    /// 当前辅助功能状态（结合「是否曾授权」区分 stale/denied/needsRestart）。
     private func currentAccessibilityState() -> SelectionReader.PermissionState {
+        let trusted = SelectionReader.isTrusted
         if SelectionReader.isFunctional {
             UserDefaults.standard.set(true, forKey: Self.axEverGrantedKey)
             return .granted
         }
+        if trusted { return .needsRestart }
         return UserDefaults.standard.bool(forKey: Self.axEverGrantedKey) ? .stale : .denied
     }
 
@@ -213,30 +222,60 @@ final class AppState: ObservableObject {
         promptAccessibility(state: state)
     }
 
-    /// 设置面板 / 横幅「修复授权」入口：清除失效记录并触发系统授权。
-    /// 只调用系统弹窗（其自带「打开系统设置」按钮），不再另行打开设置页，避免一次弹两个；
-    /// 也不立即刷新状态（此时尚未真正授权），回到 App 时按真实状态刷新。
+    /// 设置面板 / 横幅「修复授权 / 重启生效」入口。
     func repairAccessibility() {
-        let state = currentAccessibilityState()
-        if state == .stale { SelectionReader.resetPermission() }
-        SelectionReader.promptForPermission()
+        switch currentAccessibilityState() {
+        case .granted:
+            accessibilityIssue = nil
+        case .needsRestart:
+            SelectionReader.relaunchSelf()          // 已授权，重启即可生效
+        case .stale:
+            SelectionReader.resetAndRelaunch()      // 清失效记录 + 重启后重新授权
+        case .denied:
+            promptAccessibility(state: .denied)     // 首次授权：弹系统提示
+        }
+    }
+
+    /// 修复流程重启后：新进程里弹出系统授权框
+    /// （`kAXTrustedCheckOptionPrompt` 每个进程只弹一次，所以必须重启后再弹）。
+    private func handlePendingAccessibilityRecovery() {
+        guard UserDefaults.standard.bool(forKey: Self.axRecoverPendingKey) else { return }
+        UserDefaults.standard.set(false, forKey: Self.axRecoverPendingKey)
+        guard selectToTranslate else { return }
+        axLog("pending recovery: 弹出系统授权框")
+        NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            SelectionReader.promptForPermission()
+        }
     }
 
     /// 提示用户授予 / 修复辅助功能权限。
     private func promptAccessibility(state: SelectionReader.PermissionState) {
         axLog("promptAccessibility state=\(state)")
+        let title: String
+        let info: String
+        let primary: String
+        switch state {
+        case .granted:
+            return
+        case .stale:
+            title = "辅助功能授权已失效"
+            primary = "一键修复"
+            info = "「选中即翻译」需要辅助功能权限。未签名应用的授权与 App 二进制绑定，更新后会失效（系统设置里可能仍显示已授权）。\n点「一键修复」会清除失效记录并重启 Transend；重启后在系统提示里选「打开系统设置」，打开 Transend 的开关即可。"
+        case .needsRestart:
+            title = "授权已生效，需重启 Transend"
+            primary = "立即重启"
+            info = "辅助功能权限已授予，但当前运行中的进程仍是旧的授权状态。重启 Transend 后即可使用「选中即翻译」。"
+        case .denied:
+            title = "需要辅助功能权限"
+            primary = "去授权"
+            info = "「选中即翻译」需要在按快捷键时读取你选中的文本。\n点「去授权」后，在系统提示里选「打开系统设置」，再打开 Transend 的开关（macOS 不允许程序自动开启，需你手动确认一次）。"
+        }
         let alert = NSAlert()
         alert.alertStyle = .informational
-        let isStale = state == .stale
-        alert.messageText = isStale ? "辅助功能授权已失效" : "需要辅助功能权限"
-        var info = "「选中即翻译」需要在按快捷键时读取你选中的文本。"
-        if isStale {
-            info += "系统里可能仍显示 Transend 已授权，但未签名应用的授权与 App 二进制绑定，更新后会失效。\n点下方按钮会清除失效记录并弹出系统授权提示：在提示里选「打开系统设置」，再打开 Transend 的开关（macOS 不允许程序自动开启，需你手动确认一次）。"
-        } else {
-            info += "点下方按钮后，在弹出的系统提示里选「打开系统设置」，再打开 Transend 的开关（需你手动确认一次）。"
-        }
+        alert.messageText = title
         alert.informativeText = info
-        alert.addButton(withTitle: isStale ? "一键修复" : "去授权")
+        alert.addButton(withTitle: primary)
         alert.addButton(withTitle: "稍后")
 
         let previous = NSApp.activationPolicy()
@@ -244,8 +283,12 @@ final class AppState: ObservableObject {
         NSApp.activate(ignoringOtherApps: true)
         let response = alert.runModal()
         if response == .alertFirstButtonReturn {
-            if isStale { SelectionReader.resetPermission() }
-            SelectionReader.promptForPermission()
+            switch state {
+            case .stale: SelectionReader.resetAndRelaunch()
+            case .needsRestart: SelectionReader.relaunchSelf()
+            case .denied: SelectionReader.promptForPermission()
+            case .granted: break
+            }
         }
         if previous == .accessory { NSApp.setActivationPolicy(.accessory) }
     }

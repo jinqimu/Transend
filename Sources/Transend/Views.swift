@@ -85,9 +85,7 @@ struct PopoverView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
-                    Text(issue == .stale
-                         ? "选中即翻译：辅助功能授权已失效，点此一键修复…"
-                         : "选中即翻译：请在系统设置授权辅助功能，点此处理…")
+                    Text(bannerText(issue))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -98,6 +96,15 @@ struct PopoverView: View {
                 .background(RoundedRectangle(cornerRadius: 6).fill(Color.orange.opacity(0.12)))
             }
             .buttonStyle(.plain)
+        }
+    }
+
+    private func bannerText(_ issue: SelectionReader.PermissionState) -> String {
+        switch issue {
+        case .stale: return "选中即翻译：辅助功能授权已失效，点此一键修复…"
+        case .needsRestart: return "选中即翻译：已授权，需重启 Transend 生效，点此重启…"
+        case .denied: return "选中即翻译：请在系统设置授权辅助功能，点此处理…"
+        case .granted: return ""
         }
     }
 
@@ -351,7 +358,7 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                         Spacer()
                         if let issue = state.accessibilityIssue {
-                            Button(issue == .stale ? "一键修复" : "去授权") {
+                            Button(repairLabel(issue)) {
                                 state.repairAccessibility()
                             }
                             .controlSize(.small)
@@ -362,7 +369,7 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if state.selectToTranslate {
-                    Text("选中文本 → 按快捷键即可翻译；首次需在系统设置里打开 Transend 开关。更新后若提示授权失效，点「一键修复」后仍需在系统设置里手动打开一次开关")
+                    Text("选中文本 → 按快捷键即可翻译；首次需在系统设置里打开 Transend 开关。更新/授权失效时点「一键修复」会重启 App 并弹出系统授权提示，再打开开关即可")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -442,6 +449,17 @@ struct SettingsView: View {
         case .none, .some(.granted): return "辅助功能权限：已授权"
         case .some(.denied): return "辅助功能权限：未授权"
         case .some(.stale): return "辅助功能权限：授权已失效（需重新授权）"
+        case .some(.needsRestart): return "辅助功能权限：已授权（需重启生效）"
+        }
+    }
+
+    /// 辅助功能修复按钮文案。
+    private func repairLabel(_ issue: SelectionReader.PermissionState) -> String {
+        switch issue {
+        case .stale: return "一键修复"
+        case .needsRestart: return "重启生效"
+        case .denied: return "去授权"
+        case .granted: return "已授权"
         }
     }
 
@@ -713,7 +731,7 @@ struct HelpView: View {
                     faq("应用怎么更新？",
                         "应用会通过 GitHub Release 自动检查新版本（可在设置 →「应用更新」关闭）。普通安装（dmg/zip）可在设置里点「下载并安装」，自动替换并重启；Homebrew 安装请执行 brew update && brew upgrade --cask transend，两种方式使用同一产物、版本一致。")
                     faq("「选中即翻译」怎么用？",
-                        "设置 → 快捷翻译中开启后：选中任意文本 → 按全局快捷键，即可直接翻译（无需先复制）。首次需在「系统设置 → 隐私与安全性 → 辅助功能」列表里打开 Transend 的开关（macOS 不允许程序自动开启，需手动确认一次）。因应用未做 Apple 公证，辅助功能权限与二进制绑定，每次更新后可能失效——若系统里显示已授权却仍无法翻译，点设置的「一键修复」清除失效记录后，在系统设置里重新打开一次开关即可。")
+                        "设置 → 快捷翻译中开启后：选中任意文本 → 按全局快捷键，即可直接翻译（无需先复制）。首次需在「系统设置 → 隐私与安全性 → 辅助功能」列表里打开 Transend 的开关（macOS 不允许程序自动开启，需手动确认一次）。因应用未做 Apple 公证，辅助功能权限与二进制绑定，每次更新后可能失效——若系统里显示已授权却仍无法翻译，点设置的「一键修复」会重启 App 并弹出系统授权提示，再打开开关即可（授权后 macOS 需重启 App 才生效）。")
                     faq("离线能用吗？",
                         "模型下载完成后完全离线可用，翻译请求不会离开本机。")
                 }
