@@ -130,25 +130,17 @@ enum SelectionReader {
     static func readSelectedText() async -> (text: String?, usedClipboard: Bool) {
         if let text = selectedText() { return (text, false) }
         guard isTrusted else { return (nil, false) }
-        // 能读到选区范围且长度为 0 → 明确没有选区，跳过复制兜底（避免白等）
-        if let focused = copyElement(AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute as CFString),
-           selectionLength(focused) == 0 {
-            axLog("readSelectedText: 无选区，跳过复制兜底")
-            return (nil, false)
-        }
+        // 注意：不要用「选区范围为 0」来跳过兜底——Electron（飞书/VS Code 等）焦点元素
+        // 常报长度为 0 的范围，但实际有选区；TextGO 不做此跳过，故这里也不做。
         let result = await copySelectionToClipboard()
         if let text = result.text { axLog("readSelectedText: 兜底复制成功，\(text.count) chars") }
         return result
     }
 
-    /// 焦点元素的选区长度；无法读取（属性不支持等）返回 nil。
-    private static func selectionLength(_ element: AXUIElement) -> Int? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &value) == .success,
-              let v = value, CFGetTypeID(v) == AXValueGetTypeID() else { return nil }
-        var range = CFRange()
-        guard AXValueGetValue((v as! AXValue), .cfRange, &range) else { return nil }
-        return range.length
+    /// 让指定 pid 的 App 启用无障碍树（App 成为前台时调用，提前建树）。
+    static func enableAccessibilityForApp(pid: pid_t) {
+        guard pid != getpid() else { return }
+        enableChromiumAccessibility(AXUIElementCreateApplication(pid))
     }
 
     /// 兜底：模拟 ⌘C 复制当前选区，读剪贴板后**还原**原剪贴板内容。
@@ -173,7 +165,7 @@ enum SelectionReader {
 
         var text: String?
         var changed = false
-        for _ in 0..<15 { // 最长约 300ms（复制一般 <100ms）
+        for _ in 0..<20 { // 最长约 400ms（部分 Electron 首次复制较慢）
             try? await Task.sleep(nanoseconds: 20_000_000)
             if pasteboard.changeCount != beforeChange {
                 changed = true

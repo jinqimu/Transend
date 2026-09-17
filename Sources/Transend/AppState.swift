@@ -96,6 +96,9 @@ final class AppState: ObservableObject {
 
     private var started = false
 
+    /// 前台 App 切换监听（提前为浏览器/Electron 启用无障碍树）。
+    private var workspaceObserver: NSObjectProtocol?
+
     /// 是否曾成功获得辅助功能授权（用于区分「未授权」与「授权已失效」）。
     private static let axEverGrantedKey = "selectToTranslateEverGranted"
 
@@ -148,6 +151,16 @@ final class AppState: ObservableObject {
         // 选中即翻译：刷新辅助功能可用性（不可用时用横幅提示，不弹窗）
         refreshAccessibilityIssue()
         handlePendingAccessibilityRecovery()
+        // 前台 App 切换时提前启用浏览器/Electron 的无障碍树（热键时现启用可能来不及）
+        workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            SelectionReader.enableAccessibilityForApp(pid: app.processIdentifier)
+        }
+        if let front = NSWorkspace.shared.frontmostApplication {
+            SelectionReader.enableAccessibilityForApp(pid: front.processIdentifier)
+        }
     }
 
     /// 快捷键变更后重新注册（设置界面实时生效）
@@ -309,6 +322,10 @@ final class AppState: ObservableObject {
         appUpdater.cancelInstall()
         hotKey.unregister()
         clipboardMonitor.stop()
+        if let observer = workspaceObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+            workspaceObserver = nil
+        }
     }
 
     // MARK: - 模型切换与下载
