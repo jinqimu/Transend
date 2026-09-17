@@ -15,18 +15,18 @@
 
 ## 交付规则
 
-- **每次完成代码改动后，必须运行 `./Scripts/build-app.sh` 重新构建打包 `dist/Transend.app`**，供用户直接运行试用；不要只跑 `swift build` 验证后就结束（`swift build` 只产出 `.build`，不会更新 `dist`）
+- **每次完成代码改动后，必须运行 `./Scripts/build-app.sh` 重新构建打包 `dist/Transend Dev.app`**，供用户直接运行试用；不要只跑 `swift build` 验证后就结束（`swift build` 只产出 `.build`，不会更新 `dist`）
 - **未经用户明确发版，不要 `git push`**：日常改动只在本地提交，等用户发起发版（`./Scripts/release.sh`）时再统一推送到 GitHub，避免把未发布的改动提前推到远端
 - 需要分发产物（dmg/zip）时再额外 `./Scripts/make-dmg.sh` / `./Scripts/distribute.sh`
 
 ## 常用命令
 
-- 构建：`./Scripts/build-app.sh`（产物 `dist/Transend.app`）
-- 本地开发构建（独立身份，避免与 brew 安装版在辅助功能授权/偏好上冲突）：`DEV=1 ./Scripts/build-app.sh`（产物 `dist/Transend Dev.app`，bundle id `com.transend.app.dev`，显示名 `Transend Dev`）；发布/CI 不要带 `DEV`
+- 本地构建：`./Scripts/build-app.sh`（默认产物 `dist/Transend Dev.app`，bundle id `com.transend.app.dev`，显示名 `Transend Dev`）——**本地 dist 只构建 Dev 版**，避免与 brew 安装版 `com.transend.app` 在辅助功能(TCC)授权、UserDefaults 上冲突
+- 发布/CI 构建：`RELEASE=1 ./Scripts/build-app.sh`（产物 `dist/Transend.app`，bundle id `com.transend.app`）
 - 引擎版本：`build-app.sh` 默认取 llama.cpp 官方**最新正式版**（`releases/latest` → `nightly-tag.txt` 快照，如 v0.4.1→b10964；CI 传 `GITHUB_TOKEN` 避免 API 限流），缓存于 `.build/llama/`；可用 `LLAMA_VERSION=b10964` 固定版本
 - 打包 dmg：`./Scripts/make-dmg.sh`（hdiutil 需设备访问权限）
 - 打包 zip：`./Scripts/distribute.sh`
-- 直接运行二进制（环境变量钩子生效）：`dist/Transend.app/Contents/MacOS/Transend`
+- 直接运行二进制（环境变量钩子生效）：`dist/Transend Dev.app/Contents/MacOS/Transend`
 - 调试钩子：`HYMT2_OPEN_SETTINGS / HYMT2_OPEN_HELP / HYMT2_OPEN_CHANGELOG = 1` 启动时自动打开对应窗口；`HYMT2_QUICK_TEXT=<文本>` 模拟"刚复制"触发快捷翻译；`HYMT2_UPDATE_ENGINE=1` 启动即检查引擎更新并自动安装（跳过 12h 节流，端到端验证用）；`HYMT2_UPDATE_APP=1` 同理用于应用自身更新（会替换并重启 App，端到端验证用）；`HYMT2_AX_DEBUG=1` 输出辅助功能权限相关日志（查看：`log show --last 2m --predicate 'eventMessage CONTAINS "[TransendAX]"' --style compact`）
 
 ## 发布与 Homebrew
@@ -44,7 +44,7 @@
 - 选中即翻译（可选，默认关）：`SelectionReader.swift` 用辅助功能读取前台 App 选区（焦点元素 `AXSelectedText`，找不到时按子元素 BFS 兜底，depth≤3 / ≤200 节点），按热键时优先于剪贴板。**权限坑**：① adhoc 签名的 `csreq` 钉在 cdhash 上，App 更新后 TCC 记录与二进制不匹配；② `AXIsProcessTrusted()` 是**进程内缓存**，用户中途授权不会刷新，必须用 `AXIsProcessTrustedWithOptions(nil)` 实时查询；③ `kAXTrustedCheckOptionPrompt` **每进程只弹一次**，`tccutil reset` 后必须**重启进程**才会再弹；④ 授权后当前进程的 AX 连接可能仍是旧的，需重启生效。故判断用「实时 isTrusted + AX 探针」，结合「是否曾授权过」分 granted/denied/stale/needsRestart；`stale` = `tccutil reset` + 重启（`resetAndRelaunch`，新进程启动时补弹授权框）；`needsRestart` = 重启生效；启动/打开弹窗用横幅提示（不弹模态）。线程注意：`selectToTranslate` 的 `didSet` 在 `@Published` + init 赋值时也会触发，用 `guard started` 屏蔽，避免启动即弹权限窗
 - 选中即翻译的读取流程（对齐 TextGO）：① AX `AXSelectedText`（Chromium/Electron 先置 `AXEnhancedUserInterface`/`AXManualAccessibility` 启用其按需建的无障碍树；焦点元素找不到时子元素 BFS 兜底 depth≤6/≤300 节点；短重试 3×60ms 等建树）→ ② 失败回退**模拟 ⌘C + 读剪贴板**：备份剪贴板全部格式 → **清空** → 释放按住的修饰键（避免 ⌥⌘C）→ ⌘C → 每 5ms 轮询、上限**自适应 200–1000ms**（成功后递减）→ **还原**剪贴板并 `clipboardMonitor.syncChangeCount()`（避免误判"刚复制"）。**不要**用「选区范围为 0」跳过兜底——Electron（飞书/VS Code 等）焦点元素常报 0 长度但实际有选区。日志：`HYMT2_AX_DEBUG=1`
 - 彻底避免更新后需重新授权：需用**稳定签名身份**（Developer ID，或固定自签名证书；`csreq` 变为 `identifier + certificate leaf` 而非 cdhash）；adhoc 无解
-- 本地测试注意：`dist/Transend.app`（bundle id `com.transend.app`）与 brew 安装的 `/Applications/Transend.app` 同号，会导致 TCC 授权/UserDefaults 互相串、LaunchServices 分不清；本地开发请用 `DEV=1` 构建的 `Transend Dev.app`（独立 bundle id）
+- 本地测试注意：本地 dist 只构建 `Transend Dev.app`（独立 bundle id，见上），避免与 brew 安装的 `/Applications/Transend.app`（`com.transend.app`）同号导致 TCC 授权/UserDefaults 互相串、LaunchServices 分不清
 - 本地 API 端口 18632 专属；启动时清扫孤儿进程
 - 下载源：HuggingFace / HF Mirror / modelscope（国内推荐）
 - 回复用户用中文

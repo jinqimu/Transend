@@ -3,23 +3,24 @@
 #   1. 取 llama.cpp 官方「最新正式版」并下载 macOS arm64 二进制（llama-server）
 #      （可用 LLAMA_VERSION=bXXXXX 固定版本；缓存于 .build/llama/）
 #   2. swift build -c release
-#   3. 组装 dist/Transend.app（引擎内置在 Resources/engine）
+#   3. 组装 App 包（引擎内置在 Resources/engine）
 #   4. ad-hoc 签名
 #
-# DEV=1：本地开发用独立身份（dist/Transend Dev.app，bundle id com.transend.app.dev，
-#        名字 "Transend Dev"），避免与 brew 安装版 com.transend.app 在
-#        辅助功能(TCC)授权、UserDefaults 上互相冲突。发布/CI 不要带 DEV。
+# 默认构建**本地开发版**：dist/Transend Dev.app（bundle id com.transend.app.dev，
+#   名字 "Transend Dev"）——避免与 brew 安装版 com.transend.app 在辅助功能(TCC)授权、
+#   UserDefaults 上互相冲突。本地 dist 不再构建正式版。
+# 发布/CI 用 RELEASE=1 构建正式版：dist/Transend.app（bundle id com.transend.app）。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-if [ "${DEV:-}" = "1" ]; then
-    APP_NAME="Transend Dev"
-    BUNDLE_ID="com.transend.app.dev"
-    DISPLAY_NAME="Transend Dev"
-else
+if [ "${RELEASE:-}" = "1" ]; then
     APP_NAME="Transend"
     BUNDLE_ID="com.transend.app"
     DISPLAY_NAME="Transend"
+else
+    APP_NAME="Transend Dev"
+    BUNDLE_ID="com.transend.app.dev"
+    DISPLAY_NAME="Transend Dev"
 fi
 DIST="$ROOT/dist"
 APP="$DIST/$APP_NAME.app"

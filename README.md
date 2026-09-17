@@ -80,11 +80,11 @@ macOS 菜单栏翻译应用：内置标准 [llama.cpp](https://github.com/ggml-o
 ## 构建
 
 ```bash
-./Scripts/build-app.sh        # 编译 + 打包 dist/Transend.app
-DEV=1 ./Scripts/build-app.sh  # 本地开发：打包 dist/Transend Dev.app（独立 bundle id，避免与 brew 版冲突）
-./Scripts/make-icon.sh        # （可选）重新生成应用图标 Resources/AppIcon.icns
-./Scripts/distribute.sh       # 打包分发 zip：dist/Transend-<版本>.zip
-./Scripts/make-dmg.sh         # 打包分发 dmg：dist/Transend-<版本>.dmg（拖拽安装）
+./Scripts/build-app.sh             # 本地构建：打包 dist/Transend Dev.app（独立 bundle id，避免与 brew 版冲突）
+RELEASE=1 ./Scripts/build-app.sh   # 发布构建：打包 dist/Transend.app（CI 用；本地打 dmg/zip 前需先执行）
+./Scripts/make-icon.sh             # （可选）重新生成应用图标 Resources/AppIcon.icns
+./Scripts/distribute.sh            # 打包分发 zip：dist/Transend-<版本>.zip（需先 RELEASE=1 构建）
+./Scripts/make-dmg.sh              # 打包分发 dmg：dist/Transend-<版本>.dmg（需先 RELEASE=1 构建）
 ```
 
 ## 安装（Homebrew）
