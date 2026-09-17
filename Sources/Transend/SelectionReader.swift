@@ -143,52 +143,77 @@ enum SelectionReader {
         enableChromiumAccessibility(AXUIElementCreateApplication(pid))
     }
 
-    /// 兜底：模拟 ⌘C 复制当前选区，读剪贴板后**还原**原剪贴板内容。
-    /// - 先释放触发快捷键时仍按住的修饰键（否则 ⌘C 会变成 ⌥⌘C）
-    /// - 轮询剪贴板变化（最长 ~600ms）；只有当剪贴板真的变了才还原（否则说明没有选区）
+    /// ⌘C 兜底的自适应等待上限（ms）：复制成功后递减到 200（对齐 TextGO）。
+    @MainActor private static var clipboardFallbackWaitMs = 1000
+
+    /// 兜底：模拟 ⌘C 复制当前选区，读剪贴板后**还原**原剪贴板内容（对齐 TextGO）。
+    /// 流程：备份剪贴板 → 清空 → 释放修饰键 + ⌘C → 轮询（自适应 200–1000ms，每 5ms 一次）→ 还原。
     @MainActor
     private static func copySelectionToClipboard() async -> (text: String?, usedClipboard: Bool) {
         let pasteboard = NSPasteboard.general
-        let beforeChange = pasteboard.changeCount
-        let backup: [[NSPasteboard.PasteboardType: Data]] = (pasteboard.pasteboardItems ?? []).map { item in
+        let backup = backupPasteboard(pasteboard)
+
+        // 先清空：这样读到的非空内容一定是本次复制的结果（也避免读到旧内容）
+        pasteboard.clearContents()
+        let afterClear = pasteboard.changeCount
+
+        sendCopyKeystroke()
+
+        let waitMs = clipboardFallbackWaitMs
+        let intervalMs = 5
+        var attempts = 0
+        var text: String?
+        while attempts * intervalMs < waitMs {
+            try? await Task.sleep(nanoseconds: UInt64(intervalMs) * 1_000_000)
+            attempts += 1
+            if pasteboard.changeCount != afterClear,
+               let value = pasteboard.string(forType: .string), !value.isEmpty {
+                text = value
+                break
+            }
+        }
+        if text != nil {
+            clipboardFallbackWaitMs = max(200, waitMs - 100) // 复制成功 → 下次等待更短
+        }
+
+        restorePasteboard(pasteboard, backup)
+
+        guard let value = text?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+            return (nil, true)
+        }
+        return (value, true)
+    }
+
+    /// 备份剪贴板所有格式内容。
+    private static func backupPasteboard(_ pasteboard: NSPasteboard) -> [[NSPasteboard.PasteboardType: Data]] {
+        (pasteboard.pasteboardItems ?? []).map { item in
             var dict: [NSPasteboard.PasteboardType: Data] = [:]
             for type in item.types {
                 if let data = item.data(forType: type) { dict[type] = data }
             }
             return dict
         }
+    }
 
-        // 释放修饰键（Command/Shift/Option/Control），再发 ⌘C
-        for code: CGKeyCode in [55, 56, 58, 59] { postKey(code, down: false) }
-        postKey(8, down: true, flags: .maskCommand) // kVK_ANSI_C = 8
-        postKey(8, down: false, flags: .maskCommand)
-
-        var text: String?
-        var changed = false
-        for _ in 0..<20 { // 最长约 400ms（部分 Electron 首次复制较慢）
-            try? await Task.sleep(nanoseconds: 20_000_000)
-            if pasteboard.changeCount != beforeChange {
-                changed = true
-                text = pasteboard.string(forType: .string)
-                if let t = text, !t.isEmpty { break }
-            }
-        }
-        // 剪贴板没变：没有选区，无需还原
-        guard changed else { return (nil, false) }
-
-        // 还原剪贴板
+    /// 还原剪贴板内容。
+    private static func restorePasteboard(_ pasteboard: NSPasteboard,
+                                          _ backup: [[NSPasteboard.PasteboardType: Data]]) {
         pasteboard.clearContents()
-        let restored = backup.map { dict -> NSPasteboardItem in
+        let items = backup.map { dict -> NSPasteboardItem in
             let item = NSPasteboardItem()
             for (type, data) in dict { item.setData(data, forType: type) }
             return item
         }
-        if !restored.isEmpty { pasteboard.writeObjects(restored) }
+        if !items.isEmpty { pasteboard.writeObjects(items) }
+    }
 
-        guard let value = text?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
-            return (nil, true)
-        }
-        return (value, true)
+    /// 发送复制快捷键：先释放触发热键按住的修饰键，再按 ⌘C（对齐 TextGO 的 send_copy_keys）。
+    private static func sendCopyKeystroke() {
+        for code: CGKeyCode in [55, 56, 58, 59] { postKey(code, down: false) } // Command/Shift/Option/Control 抬起
+        postKey(55, down: true)                      // Command 按下
+        postKey(8, down: true, flags: .maskCommand)  // C 按下
+        postKey(8, down: false, flags: .maskCommand) // C 抬起
+        postKey(55, down: false)                     // Command 抬起
     }
 
     private static func postKey(_ code: CGKeyCode, down: Bool, flags: CGEventFlags = []) {
