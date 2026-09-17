@@ -4,6 +4,12 @@ macOS 菜单栏翻译应用：内置标准 [llama.cpp](https://github.com/ggml-o
 
 ## 版本变更
 
+**0.1.5**（2026-09-17）
+- 修复飞书 / Electron 选区读不到：去掉「选区范围为 0 就跳过 ⌘C 兜底」——Electron 焦点元素常报 0 长度但实际有选区
+- 前台 App 切换时提前启用浏览器 / Electron 的无障碍树（`AXEnhancedUserInterface` / `AXManualAccessibility`）
+- ⌘C 兜底逐项对齐 TextGO：备份全部格式 → 清空剪贴板 → 释放修饰键 + 显式 ⌘C → 每 5ms 轮询（自适应 200–1000ms）→ 还原剪贴板
+- 构建：内置 llama.cpp 引擎改为构建时取官方最新正式版（不再写死版本），当前 v0.4.1（b10964）
+
 **0.1.4**（2026-09-16）
 - 选中即翻译对齐 TextGO：AX 读不到选区时兜底**模拟 ⌘C 复制并读剪贴板**（读完还原原剪贴板），Safari 等 AX 选区不可靠的 App 现在也能用
 - 浏览器/Electron：读取前启用 `AXEnhancedUserInterface`（Chrome）/ `AXManualAccessibility`（Electron），并按子元素遍历（depth≤6/≤300 节点）兜底

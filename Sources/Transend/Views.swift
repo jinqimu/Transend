@@ -383,7 +383,7 @@ struct SettingsView: View {
                     HStack {
                         Text("版本")
                         Spacer()
-                        Text("0.1.4")
+                        Text("0.1.5")
                             .foregroundStyle(.secondary)
                         Image(systemName: "chevron.right")
                             .font(.caption2)
@@ -737,7 +737,7 @@ struct HelpView: View {
                 }
 
                 section("技术信息") {
-                    LabeledContent("版本", value: "0.1.4")
+                    LabeledContent("版本", value: "0.1.5")
                     LabeledContent("引擎版本", value: AppState.shared.updater.currentVersionDisplay)
                     LabeledContent("本地 API", value: "http://127.0.0.1:18632（OpenAI 兼容）")
                     LabeledContent("模型目录", value: "~/Library/Application Support/Transend/models")
@@ -814,9 +814,16 @@ struct ChangelogView: View {
             VStack(alignment: .leading, spacing: 20) {
                 Text("版本记录")
                     .font(.title2.bold())
-                Text("当前版本 0.1.4（快速开发版，随时更新）")
+                Text("当前版本 0.1.5（快速开发版，随时更新）")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                versionBlock("0.1.5", "2026-09-17", [
+                    "修复飞书 / Electron 选区读不到：去掉「选区范围为 0 就跳过 ⌘C 兜底」——Electron 焦点元素常报 0 长度但实际有选区",
+                    "前台 App 切换时提前启用浏览器 / Electron 的无障碍树（`AXEnhancedUserInterface` / `AXManualAccessibility`）",
+                    "⌘C 兜底逐项对齐 TextGO：备份全部格式 → 清空剪贴板 → 释放修饰键 + 显式 ⌘C → 每 5ms 轮询（自适应 200–1000ms）→ 还原剪贴板",
+                    "构建：内置 llama.cpp 引擎改为构建时取官方最新正式版（不再写死版本），当前 v0.4.1（b10964）",
+                ])
 
                 versionBlock("0.1.4", "2026-09-16", [
                     "选中即翻译对齐 TextGO：AX 读不到选区时兜底**模拟 ⌘C 复制并读剪贴板**（读完还原原剪贴板），Safari 等 AX 选区不可靠的 App 现在也能用",
