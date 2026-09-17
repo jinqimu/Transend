@@ -17,7 +17,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build app (llama.cpp + swift release)
+      - name: Build app (latest llama.cpp + swift release)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: ./Scripts/build-app.sh
 
       - name: Package dmg & zip

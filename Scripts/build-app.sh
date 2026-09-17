@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 极简打包脚本：
-#   1. 下载 llama.cpp 官方 release 的 macOS arm64 二进制（llama-server）
+#   1. 取 llama.cpp 官方「最新正式版」并下载 macOS arm64 二进制（llama-server）
+#      （可用 LLAMA_VERSION=bXXXXX 固定版本；缓存于 .build/llama/）
 #   2. swift build -c release
 #   3. 组装 dist/Transend.app（引擎内置在 Resources/engine）
 #   4. ad-hoc 签名
@@ -22,12 +23,49 @@ else
 fi
 DIST="$ROOT/dist"
 APP="$DIST/$APP_NAME.app"
-LLAMA_VERSION="${LLAMA_VERSION:-b10472}"
-TARBALL="llama-${LLAMA_VERSION}-bin-macos-arm64.tar.gz"
-LLAMA_BIN="$ROOT/.build/llama/llama-server"
-LLAMA_SRC_DIR="$ROOT/.build/llama/llama-$LLAMA_VERSION"
+# --- llama.cpp 引擎版本 ---
+# 默认取官方「最新正式版」（releases/latest，v 开头、非 pre-release）。
+# 官方正式版常不带二进制，只带 nightly-tag.txt（快照标签 bXXXXX），二进制用快照标签下载
+# （与 App 内 EngineUpdater 的规则一致）。可用 LLAMA_VERSION=bXXXXX 显式覆盖。
+api_get() {
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+        curl -fsSL --retry 2 --connect-timeout 15 --max-time 60 \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" "$1"
+    else
+        curl -fsSL --retry 2 --connect-timeout 15 --max-time 60 "$1"
+    fi
+}
 
-echo "==> 1/4 下载 llama.cpp 官方 release ($LLAMA_VERSION, macOS arm64)"
+LLAMA_LABEL=""
+if [ -z "${LLAMA_VERSION:-}" ]; then
+    echo "==> 解析 llama.cpp 最新正式版"
+    tmpjson="$(mktemp)"
+    if api_get "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest" > "$tmpjson"; then
+        LLAMA_LABEL="$(grep -o '"tag_name": *"[^"]*"' "$tmpjson" | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
+        if [ -n "$LLAMA_LABEL" ] && grep -q "llama-${LLAMA_LABEL}-bin-macos-arm64.tar.gz" "$tmpjson"; then
+            LLAMA_VERSION="$LLAMA_LABEL"            # 正式版直接带二进制
+        elif [ -n "$LLAMA_LABEL" ]; then
+            snap="$(api_get "https://github.com/ggml-org/llama.cpp/releases/download/${LLAMA_LABEL}/nightly-tag.txt" | tr -d '[:space:]')" || true
+            LLAMA_VERSION="${snap:-$LLAMA_LABEL}"   # 正式版只带快照标签
+        fi
+    fi
+    rm -f "$tmpjson"
+fi
+if [ -z "${LLAMA_VERSION:-}" ]; then
+    echo "错误：无法获取 llama.cpp 最新正式版（可显式指定，如 LLAMA_VERSION=b10964 ./Scripts/build-app.sh）" >&2
+    exit 1
+fi
+
+TARBALL="llama-${LLAMA_VERSION}-bin-macos-arm64.tar.gz"
+LLAMA_SRC_DIR="$ROOT/.build/llama/llama-$LLAMA_VERSION"
+LLAMA_BIN="$LLAMA_SRC_DIR/llama-server"
+# version.txt 展示：正式版标签 + 快照，如 "v0.4.1 (b10964)"
+VERSION_STAMP="$LLAMA_VERSION"
+if [ -n "$LLAMA_LABEL" ] && [ "$LLAMA_LABEL" != "$LLAMA_VERSION" ]; then
+    VERSION_STAMP="$LLAMA_LABEL ($LLAMA_VERSION)"
+fi
+
+echo "==> 1/4 llama.cpp 引擎：${LLAMA_LABEL:+$LLAMA_LABEL → }$LLAMA_VERSION (macOS arm64)"
 if [ ! -x "$LLAMA_BIN" ]; then
     mkdir -p "$ROOT/.build/llama"
     if [ ! -f "$ROOT/.build/llama/$TARBALL" ]; then
@@ -41,6 +79,10 @@ if [ ! -x "$LLAMA_BIN" ]; then
         done
     fi
     tar xzf "$ROOT/.build/llama/$TARBALL" -C "$ROOT/.build/llama"
+fi
+if [ ! -x "$LLAMA_BIN" ]; then
+    echo "错误：引擎解压后未找到 $LLAMA_BIN" >&2
+    exit 1
 fi
 
 echo "==> 2/4 swift build -c release"
@@ -58,8 +100,8 @@ cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 [ -f "$ROOT/Resources/AppIcon.icns" ] && cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/"
 # 整个解压目录拷入（llama-server + 依赖 dylib）
 cp -R "$LLAMA_SRC_DIR"/. "$APP/Contents/Resources/engine/"
-# 写入引擎版本标记（如 b10472），供 App 运行时检测引擎是否需要更新
-echo "$LLAMA_VERSION" > "$APP/Contents/Resources/engine/version.txt"
+# 写入引擎版本标记（如 "v0.4.1 (b10964)"），供 App 运行时检测引擎是否需要更新
+echo "$VERSION_STAMP" > "$APP/Contents/Resources/engine/version.txt"
 
 echo "==> 4/4 ad-hoc 签名"
 codesign --force --deep -s - "$APP"

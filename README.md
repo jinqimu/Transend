@@ -62,7 +62,7 @@ macOS 菜单栏翻译应用：内置标准 [llama.cpp](https://github.com/ggml-o
 
 ## 特性
 
-- **标准 llama.cpp**：官方 release 的 macOS arm64 `llama-server` 二进制打包进 App（无自编译），Metal 全量加速
+- **标准 llama.cpp**：构建时自动取 [llama.cpp](https://github.com/ggml-org/llama.cpp) 官方**最新正式版**（`releases/latest` → `nightly-tag.txt` 快照，如 v0.4.1 → b10964）的 macOS arm64 `llama-server` 二进制打包进 App（无自编译），Metal 全量加速；可用 `LLAMA_VERSION=bXXXXX` 固定版本
 - **引擎可更新**：启动时自动检查 llama.cpp 官方**正式版**（v 开头稳定版，不采用 b 开头 pre-release），有新版本时菜单栏弹窗提示，设置中一键「安装更新」——下载官方 release 装到用户数据目录，不修改 App 本身，装完自动重启引擎
 - **模型可选**：内置 3 个量化档（IQ2_M 690MB / Q3_K_M 907MB / Q4_K_M 1.08GB），设置中随时切换
 - **下载源可选**：HuggingFace / HF Mirror / ModelScope 三选一（ModelScope 对国内网络通常最快），断点续传 + 进度显示

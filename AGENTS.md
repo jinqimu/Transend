@@ -23,6 +23,7 @@
 
 - 构建：`./Scripts/build-app.sh`（产物 `dist/Transend.app`）
 - 本地开发构建（独立身份，避免与 brew 安装版在辅助功能授权/偏好上冲突）：`DEV=1 ./Scripts/build-app.sh`（产物 `dist/Transend Dev.app`，bundle id `com.transend.app.dev`，显示名 `Transend Dev`）；发布/CI 不要带 `DEV`
+- 引擎版本：`build-app.sh` 默认取 llama.cpp 官方**最新正式版**（`releases/latest` → `nightly-tag.txt` 快照，如 v0.4.1→b10964；CI 传 `GITHUB_TOKEN` 避免 API 限流），缓存于 `.build/llama/`；可用 `LLAMA_VERSION=b10964` 固定版本
 - 打包 dmg：`./Scripts/make-dmg.sh`（hdiutil 需设备访问权限）
 - 打包 zip：`./Scripts/distribute.sh`
 - 直接运行二进制（环境变量钩子生效）：`dist/Transend.app/Contents/MacOS/Transend`
