@@ -27,43 +27,118 @@ enum MenuIcon {
 // MARK: - 动态高度多行输入框
 
 /// 多行输入框：高度随内容增长（`minLines` 起），超过 `maxLines` 后内部滚动。
+/// 用 NSTextView 支撑并**自绘占位符**（按文本原点绘制，与光标严格对齐；
+/// SwiftUI `TextEditor` 的占位符 overlay 会错位/裁字）。
 private struct GrowingTextEditor: View {
     @Binding var text: String
     var placeholder: String
-    var minLines: Int = 2
-    var maxLines: Int = 8
+    var minLines: Int = 1
+    var maxLines: Int = 5
     var contentWidth: CGFloat
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            TextEditor(text: $text)
-                .font(.body)
-                .scrollContentBackground(.hidden)
-                .frame(height: height)
-            if text.isEmpty {
-                Text(placeholder)
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 8)
-                    .padding(.leading, 5)
-                    .allowsHitTesting(false)
-            }
-        }
-        .padding(4)
-        .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.25)))
+        EditorTextView(text: $text, placeholder: placeholder)
+            .frame(height: height)
+            .padding(4)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.25)))
     }
 
     private var height: CGFloat {
         let font = NSFont.preferredFont(forTextStyle: .body)
         let lineHeight = ceil(font.ascender - font.descender + font.leading)
-        let usableWidth = max(40, contentWidth - 16)
+        let usable = max(40, contentWidth - 8 - 10) // 容器 padding 4*2 + lineFragmentPadding 5*2
         let attr = NSAttributedString(string: text.isEmpty ? " " : text, attributes: [.font: font])
         let rect = attr.boundingRect(
-            with: NSSize(width: usableWidth, height: .greatestFiniteMagnitude),
+            with: NSSize(width: usable, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading])
         let lines = max(minLines, min(maxLines, Int(ceil(rect.height / max(lineHeight, 1)))))
-        return CGFloat(lines) * lineHeight + 8
+        return CGFloat(lines) * lineHeight + 4 // textContainerInset 上下各 2
+    }
+}
+
+/// NSScrollView + 自绘占位符的 NSTextView。
+private struct EditorTextView: NSViewRepresentable {
+    @Binding var text: String
+    var placeholder: String
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scroll = NSScrollView()
+        scroll.borderType = .noBorder
+        scroll.drawsBackground = false
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+
+        let tv = PlaceholderTextView()
+        tv.isEditable = true
+        tv.isRichText = false
+        tv.allowsUndo = true
+        tv.font = .preferredFont(forTextStyle: .body)
+        tv.textContainerInset = NSSize(width: 0, height: 2)
+        tv.textContainer?.lineFragmentPadding = 5
+        tv.textContainer?.widthTracksTextView = true
+        tv.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        tv.isVerticallyResizable = true
+        tv.isHorizontallyResizable = false
+        tv.minSize = .zero
+        tv.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        tv.autoresizingMask = [.width]
+        tv.drawsBackground = false
+        tv.isAutomaticQuoteSubstitutionEnabled = false
+        tv.isAutomaticDashSubstitutionEnabled = false
+        tv.isAutomaticTextReplacementEnabled = false
+        tv.isContinuousSpellCheckingEnabled = false
+        tv.delegate = context.coordinator
+        tv.placeholder = placeholder
+        scroll.documentView = tv
+        context.coordinator.textView = tv
+        return scroll
+    }
+
+    func updateNSView(_ scroll: NSScrollView, context: Context) {
+        guard let tv = scroll.documentView as? PlaceholderTextView else { return }
+        if tv.string != text { tv.string = text }
+        if tv.placeholder != placeholder { tv.placeholder = placeholder }
+        tv.needsDisplay = true
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var text: Binding<String>
+        weak var textView: NSTextView?
+        init(text: Binding<String>) { self.text = text }
+        func textDidChange(_ notification: Notification) {
+            guard let tv = notification.object as? NSTextView else { return }
+            text.wrappedValue = tv.string
+        }
+    }
+}
+
+/// 空内容时在文本原点处绘制占位符（与光标对齐）。
+private final class PlaceholderTextView: NSTextView {
+    var placeholder: String = "" {
+        didSet { needsDisplay = true }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard string.isEmpty, !placeholder.isEmpty else { return }
+        let padding = textContainer?.lineFragmentPadding ?? 0
+        let origin = textContainerOrigin
+        let rect = NSRect(x: origin.x + padding,
+                          y: origin.y,
+                          width: max(0, bounds.width - origin.x - padding),
+                          height: max(0, bounds.height - origin.y))
+        (placeholder as NSString).draw(in: rect, withAttributes: [
+            .font: font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize),
+            .foregroundColor: NSColor.placeholderTextColor,
+        ])
+    }
+
+    override func didChangeText() {
+        super.didChangeText()
+        needsDisplay = true
     }
 }
 
