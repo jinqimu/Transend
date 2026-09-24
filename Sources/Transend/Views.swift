@@ -27,43 +27,76 @@ enum MenuIcon {
 // MARK: - 动态高度多行输入框
 
 /// 多行输入框：高度随内容增长（`minLines` 起），超过 `maxLines` 后内部滚动。
-private struct GrowingTextEditor: View {
+/// 占位符由 `PlaceholderTextView` 自绘在文本起始位置，保证与光标精确对齐。
+private struct GrowingTextInput: NSViewRepresentable {
     @Binding var text: String
     var placeholder: String
-    var minLines: Int = 1
-    var maxLines: Int = 5
-    var contentWidth: CGFloat
 
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            TextEditor(text: $text)
-                .font(.body)
-                .scrollContentBackground(.hidden)
-                .frame(height: height)
-            if text.isEmpty {
-                Text(placeholder)
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 2)
-                    .padding(.leading, 5)
-                    .allowsHitTesting(false)
-            }
-        }
-        .padding(4)
-        .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.25)))
+    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let textView = PlaceholderTextView()
+        textView.placeholder = placeholder
+        textView.delegate = context.coordinator
+        textView.isRichText = false
+        textView.allowsUndo = true
+        textView.drawsBackground = false
+        textView.font = NSFont.preferredFont(forTextStyle: .body)
+        textView.textContainerInset = NSSize(width: 4, height: 6)
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.widthTracksTextView = true
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+
+        let scrollView = NSScrollView()
+        scrollView.documentView = textView
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        return scrollView
     }
 
-    private var height: CGFloat {
-        let font = NSFont.preferredFont(forTextStyle: .body)
-        let lineHeight = ceil(font.ascender - font.descender + font.leading)
-        let usableWidth = max(40, contentWidth - 16)
-        let attr = NSAttributedString(string: text.isEmpty ? " " : text, attributes: [.font: font])
-        let rect = attr.boundingRect(
-            with: NSSize(width: usableWidth, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading])
-        let lines = max(minLines, min(maxLines, Int(ceil(rect.height / max(lineHeight, 1)))))
-        return CGFloat(lines) * lineHeight + 8
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? PlaceholderTextView else { return }
+        textView.placeholder = placeholder
+        if textView.string != text {
+            textView.string = text
+            textView.needsDisplay = true
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        private let text: Binding<String>
+        init(text: Binding<String>) { self.text = text }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            text.wrappedValue = textView.string
+            textView.needsDisplay = true
+        }
+    }
+}
+
+/// NSTextView 子类：在文本起始位置绘制占位符（与光标同一坐标，天然对齐）。
+private final class PlaceholderTextView: NSTextView {
+    var placeholder: String = ""
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard string.isEmpty, !placeholder.isEmpty else { return }
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize),
+            .foregroundColor: NSColor.placeholderTextColor,
+        ]
+        let inset = textContainerInset
+        let rect = NSRect(
+            x: inset.width,
+            y: inset.height,
+            width: max(0, bounds.width - inset.width * 2),
+            height: max(0, bounds.height - inset.height * 2))
+        (placeholder as NSString).draw(in: rect, withAttributes: attributes)
     }
 }
 
@@ -228,7 +261,25 @@ struct PopoverView: View {
     }
 
     private var inputField: some View {
-        GrowingTextEditor(text: $state.input, placeholder: "输入要翻译的文本…", contentWidth: 392)
+        GrowingTextInput(text: $state.input, placeholder: "输入要翻译的文本…")
+            .frame(height: inputEditorHeight)
+            .padding(4)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.25)))
+    }
+
+    /// 输入框高度：1–5 行，超出内部滚动。
+    private var inputEditorHeight: CGFloat {
+        let font = NSFont.preferredFont(forTextStyle: .body)
+        let lineHeight = ceil(font.ascender - font.descender + font.leading)
+        let usableWidth: CGFloat = 376 // 弹窗内容 392 - 外 padding 8 - textContainerInset 8
+        let attr = NSAttributedString(string: state.input.isEmpty ? " " : state.input,
+                                      attributes: [.font: font])
+        let rect = attr.boundingRect(
+            with: NSSize(width: usableWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading])
+        let lines = max(1, min(5, Int(ceil(rect.height / max(lineHeight, 1)))))
+        return CGFloat(lines) * lineHeight + 12 // textContainerInset 上下 6*2
     }
 
     private var actionRow: some View {
