@@ -496,7 +496,7 @@ struct SettingsView: View {
                     HStack {
                         Text("版本")
                         Spacer()
-                        Text("0.1.5")
+                        Text("0.1.6")
                             .foregroundStyle(.secondary)
                         Image(systemName: "chevron.right")
                             .font(.caption2)
@@ -850,7 +850,7 @@ struct HelpView: View {
                 }
 
                 section("技术信息") {
-                    LabeledContent("版本", value: "0.1.5")
+                    LabeledContent("版本", value: "0.1.6")
                     LabeledContent("引擎版本", value: AppState.shared.updater.currentVersionDisplay)
                     LabeledContent("本地 API", value: "http://127.0.0.1:18632（OpenAI 兼容）")
                     LabeledContent("模型目录", value: "~/Library/Application Support/Transend/models")
@@ -927,9 +927,16 @@ struct ChangelogView: View {
             VStack(alignment: .leading, spacing: 20) {
                 Text("版本记录")
                     .font(.title2.bold())
-                Text("当前版本 0.1.5（快速开发版，随时更新）")
+                Text("当前版本 0.1.6（快速开发版，随时更新）")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                versionBlock("0.1.6", "2026-09-24", [
+                    "弹窗输入框：改为动态高度（默认 1 行、最多 5 行，超出内部滚动），占位符与光标精确对齐（NSTextView 自绘）",
+                    "「再次进入时自动清空输入」→ 同时清空输入与输出",
+                    "输出区新增「复制」按钮（复制全部译文）；新增最小「编辑」主菜单，选中输出后 ⌘C 可复制选中部分，输入框 ⌘V/⌘A 等也可用",
+                    "工程：本地 dist 默认只构建 Transend Dev.app（独立身份），正式版改由 CI 用 RELEASE=1 构建",
+                ])
 
                 versionBlock("0.1.5", "2026-09-17", [
                     "修复飞书 / Electron 选区读不到：去掉「选区范围为 0 就跳过 ⌘C 兜底」——Electron 焦点元素常报 0 长度但实际有选区",

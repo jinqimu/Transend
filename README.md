@@ -4,6 +4,12 @@ macOS 菜单栏翻译应用：内置标准 [llama.cpp](https://github.com/ggml-o
 
 ## 版本变更
 
+**0.1.6**（2026-09-24）
+- 弹窗输入框：改为动态高度（默认 1 行、最多 5 行，超出内部滚动），占位符与光标精确对齐（NSTextView 自绘）
+- 「再次进入时自动清空输入」→ 同时清空输入与输出
+- 输出区新增「复制」按钮（复制全部译文）；新增最小「编辑」主菜单，选中输出后 ⌘C 可复制选中部分，输入框 ⌘V/⌘A 等也可用
+- 工程：本地 dist 默认只构建 Transend Dev.app（独立身份），正式版改由 CI 用 `RELEASE=1` 构建
+
 **0.1.5**（2026-09-17）
 - 修复飞书 / Electron 选区读不到：去掉「选区范围为 0 就跳过 ⌘C 兜底」——Electron 焦点元素常报 0 长度但实际有选区
 - 前台 App 切换时提前启用浏览器 / Electron 的无障碍树（`AXEnhancedUserInterface` / `AXManualAccessibility`）
