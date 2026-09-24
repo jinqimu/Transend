@@ -24,6 +24,49 @@ enum MenuIcon {
     }
 }
 
+// MARK: - 动态高度多行输入框
+
+/// 多行输入框：高度随内容增长（`minLines` 起），超过 `maxLines` 后内部滚动。
+private struct GrowingTextEditor: View {
+    @Binding var text: String
+    var placeholder: String
+    var minLines: Int = 2
+    var maxLines: Int = 8
+    var contentWidth: CGFloat
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            TextEditor(text: $text)
+                .font(.body)
+                .scrollContentBackground(.hidden)
+                .frame(height: height)
+            if text.isEmpty {
+                Text(placeholder)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 8)
+                    .padding(.leading, 5)
+                    .allowsHitTesting(false)
+            }
+        }
+        .padding(4)
+        .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.25)))
+    }
+
+    private var height: CGFloat {
+        let font = NSFont.preferredFont(forTextStyle: .body)
+        let lineHeight = ceil(font.ascender - font.descender + font.leading)
+        let usableWidth = max(40, contentWidth - 16)
+        let attr = NSAttributedString(string: text.isEmpty ? " " : text, attributes: [.font: font])
+        let rect = attr.boundingRect(
+            with: NSSize(width: usableWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading])
+        let lines = max(minLines, min(maxLines, Int(ceil(rect.height / max(lineHeight, 1)))))
+        return CGFloat(lines) * lineHeight + 8
+    }
+}
+
 // MARK: - 菜单栏弹窗（极简：状态 + 翻译）
 
 struct PopoverView: View {
@@ -44,7 +87,7 @@ struct PopoverView: View {
             actionRow
             outputArea
             Toggle(isOn: $state.autoClearInput) {
-                Text("再次进入时自动清空输入")
+                Text("再次进入时自动清空输入输出")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -185,9 +228,7 @@ struct PopoverView: View {
     }
 
     private var inputField: some View {
-        TextField("输入要翻译的文本…", text: $state.input, axis: .vertical)
-            .lineLimit(2...6)
-            .textFieldStyle(.roundedBorder)
+        GrowingTextEditor(text: $state.input, placeholder: "输入要翻译的文本…", contentWidth: 392)
     }
 
     private var actionRow: some View {
@@ -222,10 +263,31 @@ struct PopoverView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .foregroundStyle(state.output.isEmpty ? Color.secondary : Color.primary)
                 .padding(8)
+                .padding(.trailing, 28) // 给复制按钮留位
         }
         .frame(minHeight: 90, maxHeight: 240)
         .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
+        .overlay(alignment: .topTrailing) {
+            if !state.output.isEmpty {
+                Button {
+                    copyOutput()
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+                .padding(6)
+                .help("复制全部译文（⌘C 复制选中的部分）")
+            }
+        }
         .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.25)))
+    }
+
+    /// 复制全部译文到剪贴板。
+    private func copyOutput() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(state.output, forType: .string)
     }
 
     private var footer: some View {
@@ -346,7 +408,7 @@ struct SettingsView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                 }
-                Toggle("再次进入时自动清空输入", isOn: $state.autoClearInput)
+                Toggle("再次进入时自动清空输入输出", isOn: $state.autoClearInput)
                 Toggle("选中即翻译", isOn: $state.selectToTranslate)
                 if state.selectToTranslate {
                     HStack(spacing: 6) {
@@ -701,7 +763,7 @@ struct HelpView: View {
                     numbered([
                         "刚复制/剪切过文字（如选中文本后 ⌘C）→ 自动填入并翻译",
                         "没有复制内容 → 弹出菜单栏弹窗（与点击菜单栏一致），光标聚焦输入框",
-                        "弹窗内可勾选「再次进入时自动清空输入」",
+                        "弹窗内可勾选「再次进入时自动清空输入输出」",
                     ])
                 }
 

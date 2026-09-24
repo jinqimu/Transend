@@ -14,7 +14,33 @@ enum TransendMain {
         let delegate = AppDelegate() // 强引用存活至 run() 结束（app.delegate 为弱引用）
         app.delegate = delegate
         app.setActivationPolicy(.accessory)
+        app.mainMenu = makeMainMenu() // 提供编辑菜单，使弹窗/设置里的 ⌘C/⌘V/⌘A 可用
         app.run()
+    }
+
+    /// 最小主菜单：仅「编辑」菜单，用于让文本输入/选择支持标准快捷键。
+    private static func makeMainMenu() -> NSMenu {
+        let main = NSMenu()
+
+        let appItem = NSMenuItem()
+        main.addItem(appItem)
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle: "退出 Transend",
+                        action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appItem.submenu = appMenu
+
+        let editItem = NSMenuItem()
+        main.addItem(editItem)
+        let editMenu = NSMenu(title: "编辑")
+        editMenu.addItem(withTitle: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
+        editMenu.addItem(withTitle: "重做", action: Selector(("redo:")), keyEquivalent: "Z")
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "剪切", action: Selector(("cut:")), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "复制", action: Selector(("copy:")), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "粘贴", action: Selector(("paste:")), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "全选", action: Selector(("selectAll:")), keyEquivalent: "a")
+        editItem.submenu = editMenu
+        return main
     }
 }
 
@@ -61,6 +87,7 @@ final class MenuBarController {
         state.refreshAccessibilityIssue() // 打开弹窗时刷新辅助功能状态（可能刚去系统设置授权）
         if state.autoClearInput && !keepInput {
             state.input = ""
+            state.output = ""
         }
         guard let popover, let button = statusItem?.button else { return }
         NSApp.activate(ignoringOtherApps: true)
@@ -82,21 +109,23 @@ final class MenuBarController {
 
     var isShown: Bool { popover?.isShown ?? false }
 
-    /// 光标聚焦输入框（SwiftUI TextField 底层即 NSTextField）
+    /// 光标聚焦输入框（输入框为 NSTextView 支撑的可编辑多行编辑器）
     func focusInput() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             guard let popover = self.popover, popover.isShown,
                   let content = popover.contentViewController?.view else { return }
-            if let tf = Self.firstTextField(in: content) {
-                tf.window?.makeFirstResponder(tf)
+            if let input = Self.firstTextInput(in: content) {
+                input.window?.makeFirstResponder(input)
             }
         }
     }
 
-    private static func firstTextField(in view: NSView) -> NSTextField? {
+    /// 找到第一个可编辑文本输入（NSTextView 优先，兼容 NSTextField）。
+    private static func firstTextInput(in view: NSView) -> NSView? {
+        if let tv = view as? NSTextView, tv.isEditable { return tv }
         if let tf = view as? NSTextField { return tf }
         for sub in view.subviews {
-            if let found = firstTextField(in: sub) { return found }
+            if let found = firstTextInput(in: sub) { return found }
         }
         return nil
     }
