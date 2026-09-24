@@ -288,14 +288,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
-        // 开发调试：HYMT2_OPEN_POPOVER=1 启动时自动弹出菜单栏弹窗（聚焦输入框）
-        if ProcessInfo.processInfo.environment["HYMT2_OPEN_POPOVER"] == "1" {
-            for delay in [1.5, 2.5] {
-                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                    MenuBarController.shared.showPopover()
-                }
-            }
-        }
         // 开发调试：HYMT2_OPEN_SETTINGS=1 启动时自动打开设置窗口
         if ProcessInfo.processInfo.environment["HYMT2_OPEN_SETTINGS"] == "1" {
             for delay in [1.0, 2.0, 3.0] {
