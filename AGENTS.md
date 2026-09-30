@@ -9,7 +9,7 @@
   - `Resources/Info.plist`（CFBundleShortVersionString）
   - `Sources/Transend/Views.swift`（设置面板版本行、HelpView 技术信息）
   - `Sources/Transend/Views.swift` 的 `ChangelogView` 新增条目
-  - `README.md`「版本变更」记录同步新增条目
+  - `CHANGELOG.md`「版本变更」记录同步新增条目（Release 说明由 CI 从此文件按版本提取）
   - 产物文件名由打包脚本按 Info.plist 自动生成，无需手动改
 - 新版本有实质改动时才追加变更条目；版本刚开未完成时写「（开发中）」
 

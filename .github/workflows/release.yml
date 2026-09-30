@@ -33,7 +33,7 @@ jobs:
           shasum -a 256 Transend-*.dmg Transend-*.zip > checksums.txt
           cat checksums.txt
 
-      - name: Extract release notes from README
+      - name: Extract release notes from CHANGELOG
         run: |
           tag="$GITHUB_REF_NAME"
           version="${tag#v}"
@@ -41,7 +41,7 @@ jobs:
             index($0, v) == 1 { capture=1 }
             capture && index($0, "**") == 1 && index($0, v) != 1 { exit }
             capture { print }
-          ' README.md > release_notes.md
+          ' CHANGELOG.md > release_notes.md
           echo "--- release_notes.md ---"
           cat release_notes.md
 
