@@ -496,7 +496,7 @@ struct SettingsView: View {
                     HStack {
                         Text("版本")
                         Spacer()
-                        Text("0.1.6")
+                        Text("0.1.7")
                             .foregroundStyle(.secondary)
                         Image(systemName: "chevron.right")
                             .font(.caption2)
@@ -850,7 +850,7 @@ struct HelpView: View {
                 }
 
                 section("技术信息") {
-                    LabeledContent("版本", value: "0.1.6")
+                    LabeledContent("版本", value: "0.1.7")
                     LabeledContent("引擎版本", value: AppState.shared.updater.currentVersionDisplay)
                     LabeledContent("本地 API", value: "http://127.0.0.1:18632（OpenAI 兼容）")
                     LabeledContent("模型目录", value: "~/Library/Application Support/Transend/models")
@@ -927,9 +927,14 @@ struct ChangelogView: View {
             VStack(alignment: .leading, spacing: 20) {
                 Text("版本记录")
                     .font(.title2.bold())
-                Text("当前版本 0.1.6（快速开发版，随时更新）")
+                Text("当前版本 0.1.7（快速开发版，随时更新）")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                versionBlock("0.1.7", "2026-11-13", [
+                    "修复：前台 App 处于全屏时，用快捷键唤起翻译弹窗会闪一下就消失——弹窗改为锚定自建的透明锚点窗口（可加入全屏空间），并等应用激活后再显示",
+                    "README 顶部新增 Homebrew 安装量徽章（每日从 Homebrew Analytics 更新）",
+                ])
 
                 versionBlock("0.1.6", "2026-09-24", [
                     "弹窗输入框：改为动态高度（默认 1 行、最多 5 行，超出内部滚动），占位符与光标精确对齐（NSTextView 自绘）",

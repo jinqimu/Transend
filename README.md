@@ -1,5 +1,7 @@
 # Transend 菜单栏翻译
 
+[![Homebrew 安装量](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fjinqimu%2FTransend%2Fmain%2Fdocs%2Fbrew-installs.json)](https://formulae.brew.sh/analytics/)
+
 macOS 菜单栏翻译应用：内置标准 [llama.cpp](https://github.com/ggml-org/llama.cpp) `llama-server`，加载 [unsloth/Hy-MT2-1.8B-GGUF](https://huggingface.co/unsloth/Hy-MT2-1.8B-GGUF) 标准量化模型，后台稳定运行，菜单栏显示状态。
 
 ## 特性
