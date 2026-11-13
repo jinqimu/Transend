@@ -12,7 +12,8 @@ permissions:
 
 jobs:
   release:
-    runs-on: macos-14
+    # macos-14 已于 2026-11-02 退役（用到该 label 的任务会被直接取消），改用 macos-15。
+    runs-on: macos-15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
