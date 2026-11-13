@@ -53,6 +53,10 @@ final class MenuBarController {
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
     private var iconSink: AnyCancellable?
+    /// 弹窗锚点窗口（见 `popoverAnchor()`）
+    private var anchorWindow: NSWindow?
+    /// 每次 `showPopover` 递增，用于作废上一次未完成的「等激活再弹」任务
+    private var showGeneration = 0
 
     private init() {}
 
@@ -89,9 +93,10 @@ final class MenuBarController {
             state.input = ""
             state.output = ""
         }
-        guard let popover, let button = statusItem?.button else { return }
+        guard popover != nil else { return }
         NSApp.activate(ignoringOtherApps: true)
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        showGeneration += 1
+        presentPopover(generation: showGeneration, attempt: 0)
         if keepInput {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                 if AppState.shared.engine.isRunning {
@@ -101,6 +106,62 @@ final class MenuBarController {
         } else {
             focusInput()
         }
+    }
+
+    /// 等应用真正激活后再显示弹窗。
+    ///
+    /// 前台 App 全屏时，`NSApp.activate` 后系统需要几十毫秒才把激活交给我们；而 `.transient`
+    /// 弹窗在应用未激活时会自行关闭（表现为"闪一下就不见了"）。这里最多等约 0.6s 兜底。
+    private func presentPopover(generation: Int, attempt: Int) {
+        guard generation == showGeneration else { return }
+        if !NSApp.isActive && attempt < 12 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                self?.presentPopover(generation: generation, attempt: attempt + 1)
+            }
+            return
+        }
+        guard let popover, let anchor = popoverAnchor() else { return }
+        popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+        axLog("showPopover: shown attempt=\(attempt) active=\(NSApp.isActive)")
+    }
+
+    /// 弹窗锚点：一个 1x1 的透明窗口，放在状态图标正下方。
+    ///
+    /// 不能直接把 popover 锚定在 `NSStatusItem` 的按钮上：全屏 App 前台时，菜单栏属于另一个
+    /// （自动隐藏的）窗口/空间，锚定它显示的弹窗会让 macOS 在 ~0.1s 后撤销本应用的激活
+    /// （`_handleDeactivateEvent`），`.transient` 弹窗随即自关。改为锚定自己创建的、
+    /// 可加入所有空间（含全屏空间）的透明窗口后，激活不会被撤销，弹窗能正常停留。
+    private func popoverAnchor() -> NSView? {
+        guard let button = statusItem?.button, let buttonWindow = button.window else { return nil }
+        let buttonRect = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
+        let screen = NSScreen.screens.first {
+            $0.frame.contains(NSPoint(x: buttonRect.midX, y: buttonRect.midY))
+        } ?? NSScreen.main
+        var origin = NSPoint(x: buttonRect.midX, y: buttonRect.minY)
+        if let screen { // 菜单栏自动隐藏时状态栏窗口可能在屏幕外，把锚点夹回屏内
+            origin.x = min(max(origin.x, screen.frame.minX + 1), screen.frame.maxX - 1)
+            origin.y = min(max(origin.y, screen.frame.minY + 1), screen.frame.maxY - 1)
+        }
+        let frame = NSRect(origin: origin, size: NSSize(width: 1, height: 1))
+
+        let anchorWindow: NSWindow
+        if let existing = self.anchorWindow {
+            anchorWindow = existing
+        } else {
+            anchorWindow = NSWindow(contentRect: frame, styleMask: .borderless,
+                                    backing: .buffered, defer: false)
+            anchorWindow.isOpaque = false
+            anchorWindow.backgroundColor = .clear
+            anchorWindow.hasShadow = false
+            anchorWindow.level = .statusBar
+            anchorWindow.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+            anchorWindow.ignoresMouseEvents = true
+            anchorWindow.isReleasedWhenClosed = false
+            self.anchorWindow = anchorWindow
+        }
+        anchorWindow.setFrame(frame, display: false)
+        anchorWindow.orderFrontRegardless()
+        return anchorWindow.contentView
     }
 
     func closePopover() {
